@@ -29,6 +29,7 @@ Required variables:
 - `TG_BOT_TOKEN`
 - `ALLOWED_TELEGRAM_USER_IDS`
 - `MIKROTIK_HOST`
+- `MIKROTIK_PORT`
 - `MIKROTIK_USERNAME`
 - `MIKROTIK_PASSWORD`
 
@@ -52,6 +53,8 @@ cp .env.example .env
 docker compose up --build -d
 docker compose logs -f bot
 ```
+
+The image name is already fixed in [compose.yaml](/opt/projects/bot_add_ip_mikrotik/compose.yaml), so nothing extra is needed in `.env` for Docker Compose.
 
 ## Bot Commands
 
