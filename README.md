@@ -49,6 +49,19 @@ pytest
 python -m tgbot_manage_addresslist
 ```
 
+## Guided Setup
+
+The easiest way is the interactive installer:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e .[dev]
+python setup_bot.py
+```
+
+The installer asks for Telegram and MikroTik values, generates an SSH key, writes `.env`, creates a dedicated MikroTik user, imports the public key for that user, records `known_hosts`, and can optionally start `docker compose` for you.
+
 ## Docker Run
 
 ```bash

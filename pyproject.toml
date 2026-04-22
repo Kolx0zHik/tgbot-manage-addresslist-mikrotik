@@ -22,6 +22,7 @@ dev = [
 
 [project.scripts]
 tgbot-manage-addresslist = "tgbot_manage_addresslist.__main__:main"
+tgbot-manage-addresslist-setup = "tgbot_manage_addresslist.installer:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
