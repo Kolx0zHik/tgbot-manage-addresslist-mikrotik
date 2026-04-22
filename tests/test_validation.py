@@ -1,4 +1,4 @@
-from tgbot_manage_addresslist.validation.ip_lists import parse_ip_input
+from tgbot_manage_addresslist.logic import parse_ip_input
 
 
 def test_parse_ip_input_separates_valid_invalid_and_duplicates() -> None:

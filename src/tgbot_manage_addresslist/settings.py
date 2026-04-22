@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from dataclasses import dataclass
-from pathlib import Path
 
 from dotenv import load_dotenv
 
@@ -15,15 +14,14 @@ def _require_env(name: str) -> str:
 
 
 def _parse_user_ids(raw: str) -> tuple[int, ...]:
-    values = []
+    user_ids: list[int] = []
     for item in raw.split(","):
         stripped = item.strip()
-        if not stripped:
-            continue
-        values.append(int(stripped))
-    if not values:
+        if stripped:
+            user_ids.append(int(stripped))
+    if not user_ids:
         raise ValueError("ALLOWED_TELEGRAM_USER_IDS must contain at least one user id")
-    return tuple(values)
+    return tuple(user_ids)
 
 
 @dataclass(frozen=True, slots=True)
@@ -33,8 +31,7 @@ class Settings:
     mikrotik_host: str
     mikrotik_port: int
     mikrotik_username: str
-    mikrotik_ssh_private_key_path: Path
-    mikrotik_ssh_known_hosts_path: Path
+    mikrotik_password: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -45,6 +42,5 @@ class Settings:
             mikrotik_host=_require_env("MIKROTIK_HOST"),
             mikrotik_port=int(os.getenv("MIKROTIK_PORT", "22")),
             mikrotik_username=_require_env("MIKROTIK_USERNAME"),
-            mikrotik_ssh_private_key_path=Path(_require_env("MIKROTIK_SSH_PRIVATE_KEY_PATH")),
-            mikrotik_ssh_known_hosts_path=Path(_require_env("MIKROTIK_SSH_KNOWN_HOSTS_PATH")),
+            mikrotik_password=_require_env("MIKROTIK_PASSWORD"),
         )

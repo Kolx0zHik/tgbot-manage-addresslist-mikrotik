@@ -5,20 +5,44 @@ from dataclasses import dataclass
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery, Message
+from aiogram.fsm.state import State, StatesGroup
+from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from tgbot_manage_addresslist.bot.keyboards import (
-    build_address_list_keyboard,
-    build_confirmation_keyboard,
-)
-from tgbot_manage_addresslist.bot.states import AddIpFlow, DeleteListFlow
-from tgbot_manage_addresslist.config.settings import Settings
-from tgbot_manage_addresslist.services.address_list_manager import (
+from tgbot_manage_addresslist.logic import (
     AddOperationResult,
     AddressListManager,
     DeleteOperationResult,
+    parse_ip_input,
 )
-from tgbot_manage_addresslist.validation.ip_lists import parse_ip_input
+from tgbot_manage_addresslist.settings import Settings
+
+
+class AddIpFlow(StatesGroup):
+    waiting_for_ip_input = State()
+    waiting_for_new_list_name = State()
+
+
+class DeleteListFlow(StatesGroup):
+    waiting_for_confirmation = State()
+
+
+def build_address_list_keyboard(address_lists: list[str], action_prefix: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for index, list_name in enumerate(address_lists):
+        builder.button(text=list_name, callback_data=f"{action_prefix}:{index}")
+    if action_prefix == "pick":
+        builder.button(text="Создать новый address-list", callback_data="pick:new")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def build_confirmation_keyboard(confirm_callback: str, cancel_callback: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Подтвердить", callback_data=confirm_callback)
+    builder.button(text="Отмена", callback_data=cancel_callback)
+    builder.adjust(2)
+    return builder.as_markup()
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,29 +71,18 @@ def _format_add_result(result: AddOperationResult) -> str:
         f"Ошибки MikroTik: {len(result.errors)}",
     ]
     if result.added:
-        lines.append("")
-        lines.append("Добавлены:")
-        lines.extend(result.added)
+        lines.extend(["", "Добавлены:", *result.added])
     if result.duplicates:
-        lines.append("")
-        lines.append("Уже существовали:")
-        lines.extend(result.duplicates)
+        lines.extend(["", "Уже существовали:", *result.duplicates])
     if result.invalid_tokens:
-        lines.append("")
-        lines.append("Невалидные:")
-        lines.extend(result.invalid_tokens)
+        lines.extend(["", "Невалидные:", *result.invalid_tokens])
     if result.errors:
-        lines.append("")
-        lines.append("Ошибки:")
-        lines.extend(f"{item.ip_address}: {item.reason}" for item in result.errors)
+        lines.extend(["", "Ошибки:", *[f"{item.ip_address}: {item.reason}" for item in result.errors]])
     return "\n".join(lines)
 
 
 def _format_delete_result(result: DeleteOperationResult) -> str:
-    return (
-        f"Address-list {result.list_name} удален.\n"
-        f"Удалено записей: {result.removed_count}"
-    )
+    return f"Address-list {result.list_name} удален.\nУдалено записей: {result.removed_count}"
 
 
 def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
@@ -112,13 +125,10 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await message.answer("Не удалось распознать ни одного IP адреса. Попробуйте еще раз.")
             return
         if not parsed.valid_ips:
-            await message.answer(
-                "В сообщении нет валидных IP адресов. Исправьте список и отправьте его еще раз."
-            )
+            await message.answer("В сообщении нет валидных IP адресов. Исправьте список и отправьте его еще раз.")
             return
 
         address_lists = await deps.address_list_manager.fetch_address_lists()
-
         await state.update_data(
             valid_ips=parsed.valid_ips,
             invalid_tokens=parsed.invalid_tokens,
@@ -145,9 +155,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if raw_index == "new":
             return
         data = await state.get_data()
-        address_lists = data.get("address_lists", [])
-        index = int(raw_index)
-        list_name = address_lists[index]
+        list_name = data.get("address_lists", [])[int(raw_index)]
         result = await deps.address_list_manager.add_ips(
             list_name=list_name,
             valid_ips=data.get("valid_ips", []),
@@ -194,9 +202,10 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
         _, raw_index = callback.data.split(":", 1)
+        if raw_index in {"confirm", "cancel"}:
+            return
         data = await state.get_data()
-        address_lists = data.get("address_lists", [])
-        list_name = address_lists[int(raw_index)]
+        list_name = data.get("address_lists", [])[int(raw_index)]
         await state.update_data(delete_list_name=list_name)
         await state.set_state(DeleteListFlow.waiting_for_confirmation)
         await callback.message.answer(
@@ -218,8 +227,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
         data = await state.get_data()
-        list_name = data["delete_list_name"]
-        result = await deps.address_list_manager.delete_list(list_name)
+        result = await deps.address_list_manager.delete_list(data["delete_list_name"])
         await state.clear()
         await callback.message.answer(_format_delete_result(result))
         await callback.answer()

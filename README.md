@@ -24,19 +24,15 @@ Telegram bot for managing MikroTik firewall `address-list` entries over SSH.
 
 Copy `.env.example` to `.env` and adjust values.
 
-Mount your SSH private key and `known_hosts` file into the container, for example:
-
-- `./secrets/id_ed25519:/run/secrets/mikrotik_ssh_key:ro`
-- `./secrets/known_hosts:/run/secrets/known_hosts:ro`
-
 Required variables:
 
 - `TG_BOT_TOKEN`
 - `ALLOWED_TELEGRAM_USER_IDS`
 - `MIKROTIK_HOST`
 - `MIKROTIK_USERNAME`
-- `MIKROTIK_SSH_PRIVATE_KEY_PATH`
-- `MIKROTIK_SSH_KNOWN_HOSTS_PATH`
+- `MIKROTIK_PASSWORD`
+
+Create a separate MikroTik user for the bot and put that login/password into `.env`. Do not use your main admin account for day-to-day bot work.
 
 ## Local Run
 
@@ -48,19 +44,6 @@ cp .env.example .env
 pytest
 python -m tgbot_manage_addresslist
 ```
-
-## Guided Setup
-
-The easiest way is the interactive installer:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -e .[dev]
-python setup_bot.py
-```
-
-The installer asks for Telegram and MikroTik values, generates an SSH key, writes `.env`, creates a dedicated MikroTik user, imports the public key for that user, records `known_hosts`, and can optionally start `docker compose` for you.
 
 ## Docker Run
 
@@ -86,6 +69,6 @@ docker compose logs -f bot
 ## Security Notes
 
 - Keep the repository private while bootstrapping.
-- Do not commit `.env`, SSH keys, or host fingerprints.
-- Restrict the SSH key on the MikroTik side to the minimum required account.
-- Keep `known_hosts` validation enabled in production.
+- Do not commit `.env`.
+- Create a dedicated MikroTik user for the bot.
+- Give that user only the rights needed to manage `address-list`.

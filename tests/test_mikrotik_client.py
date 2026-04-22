@@ -1,4 +1,4 @@
-from tgbot_manage_addresslist.mikrotik.client import (
+from tgbot_manage_addresslist.mikrotik import (
     parse_address_list_names,
     parse_addresses,
     routeros_quote,

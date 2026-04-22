@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from tgbot_manage_addresslist.services.address_list_manager import AddressListManager
+from tgbot_manage_addresslist.logic import AddressListManager
 
 
 class FakeMikroTikClient:

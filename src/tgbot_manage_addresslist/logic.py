@@ -1,8 +1,40 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from ipaddress import ip_address
+import re
 
-from tgbot_manage_addresslist.mikrotik.client import MikroTikClientProtocol
+from tgbot_manage_addresslist.mikrotik import MikroTikClientProtocol
+
+
+TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedIpInput:
+    valid_ips: list[str]
+    invalid_tokens: list[str]
+
+
+def parse_ip_input(raw_text: str) -> ParsedIpInput:
+    valid_ips: list[str] = []
+    invalid_tokens: list[str] = []
+    seen: set[str] = set()
+
+    for token in TOKEN_SPLIT_RE.split(raw_text.strip()):
+        if not token:
+            continue
+        try:
+            normalized = str(ip_address(token))
+        except ValueError:
+            invalid_tokens.append(token)
+            continue
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        valid_ips.append(normalized)
+
+    return ParsedIpInput(valid_ips=valid_ips, invalid_tokens=invalid_tokens)
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,16 +75,16 @@ class AddressListManager:
         duplicates: list[str] = []
         errors: list[AddOperationError] = []
 
-        for ip_address in valid_ips:
-            error = await self._mikrotik_client.add_address(list_name, ip_address)
+        for current_ip in valid_ips:
+            error = await self._mikrotik_client.add_address(list_name, current_ip)
             if error is None:
-                added.append(ip_address)
+                added.append(current_ip)
                 continue
-            normalized_error = error.lower()
-            if "already have such entry" in normalized_error or "already exists" in normalized_error:
-                duplicates.append(ip_address)
+            lowered_error = error.lower()
+            if "already have such entry" in lowered_error or "already exists" in lowered_error:
+                duplicates.append(current_ip)
                 continue
-            errors.append(AddOperationError(ip_address=ip_address, reason=error))
+            errors.append(AddOperationError(ip_address=current_ip, reason=error))
 
         return AddOperationResult(
             list_name=list_name,

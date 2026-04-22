@@ -6,7 +6,7 @@ from typing import Protocol
 
 import asyncssh
 
-from tgbot_manage_addresslist.config.settings import Settings
+from tgbot_manage_addresslist.settings import Settings
 
 
 LIST_VALUE_RE = re.compile(r'(?:^|\s)list=(?:"((?:[^"\\]|\\.)*)"|(\S+))')
@@ -43,7 +43,6 @@ def routeros_quote(value: str) -> str:
 def parse_address_list_names(output: str) -> list[str]:
     names: list[str] = []
     seen: set[str] = set()
-
     for line in output.splitlines():
         match = LIST_VALUE_RE.search(line)
         if not match:
@@ -51,11 +50,9 @@ def parse_address_list_names(output: str) -> list[str]:
         raw_value = match.group(1) if match.group(1) is not None else match.group(2)
         assert raw_value is not None
         value = _unescape_routeros_value(raw_value)
-        if value in seen:
-            continue
-        seen.add(value)
-        names.append(value)
-
+        if value not in seen:
+            seen.add(value)
+            names.append(value)
     return sorted(names)
 
 
@@ -80,8 +77,8 @@ class MikroTikSSHClient:
             host=self._settings.mikrotik_host,
             port=self._settings.mikrotik_port,
             username=self._settings.mikrotik_username,
-            client_keys=[str(self._settings.mikrotik_ssh_private_key_path)],
-            known_hosts=str(self._settings.mikrotik_ssh_known_hosts_path),
+            password=self._settings.mikrotik_password,
+            known_hosts=None,
         ) as connection:
             result = await connection.run(command, check=False)
         return CommandResult(
@@ -107,18 +104,16 @@ class MikroTikSSHClient:
         return result.stderr or "Unknown MikroTik error"
 
     async def delete_address_list(self, list_name: str) -> int:
-        list_command = (
+        inspect_command = (
             f"/ip firewall address-list print terse without-paging where list={routeros_quote(list_name)}"
         )
-        list_result = await self._run(list_command)
-        if list_result.exit_status != 0:
-            raise RuntimeError(list_result.stderr or "Failed to inspect MikroTik address-list")
+        inspect_result = await self._run(inspect_command)
+        if inspect_result.exit_status != 0:
+            raise RuntimeError(inspect_result.stderr or "Failed to inspect MikroTik address-list")
 
-        addresses = parse_addresses(list_result.stdout)
-        delete_command = (
-            f"/ip firewall address-list remove [find list={routeros_quote(list_name)}]"
-        )
+        delete_command = f"/ip firewall address-list remove [find list={routeros_quote(list_name)}]"
         delete_result = await self._run(delete_command)
         if delete_result.exit_status != 0:
             raise RuntimeError(delete_result.stderr or "Failed to delete MikroTik address-list")
-        return len(addresses)
+
+        return len(parse_addresses(inspect_result.stdout))

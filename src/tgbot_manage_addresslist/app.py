@@ -5,10 +5,10 @@ import asyncio
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 
-from tgbot_manage_addresslist.bot.handlers import BotDependencies, register_handlers
-from tgbot_manage_addresslist.config.settings import Settings
-from tgbot_manage_addresslist.mikrotik.client import MikroTikSSHClient
-from tgbot_manage_addresslist.services.address_list_manager import AddressListManager
+from tgbot_manage_addresslist.logic import AddressListManager
+from tgbot_manage_addresslist.mikrotik import MikroTikSSHClient
+from tgbot_manage_addresslist.settings import Settings
+from tgbot_manage_addresslist.telegram_bot import BotDependencies, register_handlers
 
 
 async def run() -> None:

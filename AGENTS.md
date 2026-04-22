@@ -6,19 +6,18 @@ This repository hosts a Telegram bot that manages MikroTik firewall address list
 
 ## Project Rules
 
-- Keep secrets out of git. Never commit real Telegram tokens, SSH private keys, hostnames, usernames, or allowed user IDs.
-- All runtime configuration must come from environment variables or mounted secret files.
+- Keep secrets out of git. Never commit real Telegram tokens, MikroTik passwords, hostnames, usernames, or allowed user IDs.
+- All runtime configuration must come from environment variables.
 - Prefer small, focused modules over large files.
 - Cover core business logic with tests before extending integrations.
 - When touching Docker or GitHub workflows, preserve private-repo compatibility and GHCR publishing.
 
 ## Architecture Notes
 
-- `src/tgbot_manage_addresslist/config/` contains environment-driven settings.
-- `src/tgbot_manage_addresslist/validation/` contains IP parsing and validation.
-- `src/tgbot_manage_addresslist/mikrotik/` contains SSH command execution and RouterOS output parsing.
-- `src/tgbot_manage_addresslist/services/` contains business logic for address-list management.
-- `src/tgbot_manage_addresslist/bot/` contains Telegram handlers, keyboards, and FSM states.
+- `src/tgbot_manage_addresslist/settings.py` contains environment-driven settings.
+- `src/tgbot_manage_addresslist/logic.py` contains IP parsing and address-list business logic.
+- `src/tgbot_manage_addresslist/mikrotik.py` contains SSH command execution and RouterOS output parsing.
+- `src/tgbot_manage_addresslist/telegram_bot.py` contains Telegram handlers and FSM states.
 
 ## Agent Expectations
 
