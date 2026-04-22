@@ -1,0 +1,11 @@
+services:
+  bot:
+    build:
+      context: .
+    image: tgbot-manage-addresslist-mikrotik:local
+    env_file:
+      - .env
+    restart: unless-stopped
+    volumes:
+      - ./secrets/id_ed25519:/run/secrets/mikrotik_ssh_key:ro
+      - ./secrets/known_hosts:/run/secrets/known_hosts:ro
