@@ -1,6 +1,7 @@
 services:
-  bot:
+  tgbot_mikrotik:
     image: ghcr.io/kolx0zhik/tgbot_manage_mikrotik:latest
     env_file:
       - .env
+    container_name: tgbot_mikrotik
     restart: unless-stopped
