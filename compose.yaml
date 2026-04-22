@@ -1,8 +1,6 @@
 services:
   bot:
-    build:
-      context: .
-    image: tgbot_manage_mikrotik:local
+    image: ghcr.io/kolx0zhik/tgbot_manage_mikrotik:latest
     env_file:
       - .env
     restart: unless-stopped
