@@ -2,7 +2,7 @@ services:
   bot:
     build:
       context: .
-    image: tgbot-manage-addresslist-mikrotik:local
+    image: tgbot_manage_mikrotik:local
     env_file:
       - .env
     restart: unless-stopped
