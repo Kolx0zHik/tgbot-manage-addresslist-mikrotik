@@ -278,22 +278,15 @@ async def _reply_mikrotik_error(event: Message | CallbackQuery, state: FSMContex
     )
 
 
-async def _start_add_flow(event: Message | CallbackQuery, state: FSMContext) -> None:
-    session_id = _new_session_id()
+async def _start_add_flow(event: Message | CallbackQuery, state: FSMContext, deps: BotDependencies) -> None:
     await state.clear()
-    await state.set_state(BotFlow.add_waiting_ip_input)
-    await state.update_data(
-        **{
-            DATA_FLOW_TYPE: FLOW_ADD,
-            DATA_FLOW_SESSION_ID: session_id,
-        }
-    )
-    await _render_screen(
-        state,
-        event,
-        "Отправьте список IP-адресов.",
-        _build_cancel_keyboard(session_id),
-    )
+    try:
+        address_lists = await deps.address_list_manager.fetch_address_lists()
+    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        logger.exception("Failed to fetch address-lists for add flow")
+        await _reply_mikrotik_error(event, state)
+        return
+    await _show_add_list_choice(event, state, address_lists=address_lists)
 
 
 async def _show_add_list_choice(
@@ -301,8 +294,6 @@ async def _show_add_list_choice(
     state: FSMContext,
     *,
     address_lists: list[str],
-    valid_ips: list[str],
-    invalid_tokens: list[str],
     notice: str | None = None,
 ) -> None:
     session_id = _new_session_id()
@@ -312,8 +303,6 @@ async def _show_add_list_choice(
             DATA_FLOW_TYPE: FLOW_ADD,
             DATA_FLOW_SESSION_ID: session_id,
             DATA_ADDRESS_LISTS: address_lists,
-            DATA_VALID_IPS: valid_ips,
-            DATA_INVALID_TOKENS: invalid_tokens,
         }
     )
     text = "Выберите существующий address-list или создайте новый."
@@ -337,6 +326,30 @@ async def _show_new_list_name_prompt(
         }
     )
     text = "Отправьте имя нового address-list."
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
+
+
+async def _show_add_ip_prompt(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    *,
+    list_name: str,
+    selected_source: str,
+    notice: str | None = None,
+) -> None:
+    session_id = _new_session_id()
+    await state.set_state(BotFlow.add_waiting_ip_input)
+    await state.update_data(
+        **{
+            DATA_FLOW_TYPE: FLOW_ADD,
+            DATA_FLOW_SESSION_ID: session_id,
+            DATA_SELECTED_LIST: list_name,
+            DATA_SELECTED_SOURCE: selected_source,
+        }
+    )
+    text = f"Отправьте IP-адреса или подсети для address-list {list_name}."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
@@ -495,17 +508,18 @@ async def _handle_add_ip_input(message: Message, state: FSMContext, deps: BotDep
         len(parsed.valid_ips),
         message.from_user.id if message.from_user else "unknown",
     )
-    try:
-        address_lists = await deps.address_list_manager.fetch_address_lists()
-    except (ConnectionError, OSError, TimeoutError, RuntimeError):
-        logger.exception("Failed to fetch address-lists from MikroTik")
-        await _reply_mikrotik_error(message, state)
+    data = await state.get_data()
+    list_name = data.get(DATA_SELECTED_LIST)
+    selected_source = data.get(DATA_SELECTED_SOURCE)
+    if not isinstance(list_name, str) or not list_name or not isinstance(selected_source, str):
+        await _reset_to_menu(state, message, "Сценарий добавления потерян. Начните заново.")
         return
 
-    await _show_add_list_choice(
+    await _show_add_confirmation(
         message,
         state,
-        address_lists=address_lists,
+        list_name=list_name,
+        selected_source=selected_source,
         valid_ips=parsed.valid_ips,
         invalid_tokens=parsed.invalid_tokens,
     )
@@ -547,7 +561,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             expected_actions={ACTION_ADD},
         ) is None:
             return
-        await _start_add_flow(callback, state)
+        await _start_add_flow(callback, state, deps)
         await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_DELETE}:"))
@@ -606,18 +620,11 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         except (ValueError, IndexError):
             await callback.answer("Выбранный address-list больше неактуален. Откройте список заново.", show_alert=True)
             return
-        valid_ips = data.get(DATA_VALID_IPS, [])
-        invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
-        if not isinstance(valid_ips, list) or not isinstance(invalid_tokens, list) or not valid_ips:
-            await callback.answer("Список IP-адресов потерян. Начните сценарий заново.", show_alert=True)
-            return
-        await _show_add_confirmation(
+        await _show_add_ip_prompt(
             callback,
             state,
             list_name=list_name,
             selected_source="existing",
-            valid_ips=valid_ips,
-            invalid_tokens=invalid_tokens,
         )
         await callback.answer()
 
@@ -643,19 +650,15 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if not list_name:
             await message.answer("Имя address-list не может быть пустым.")
             return
-        data = await state.get_data()
-        valid_ips = data.get(DATA_VALID_IPS, [])
-        invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
-        if not isinstance(valid_ips, list) or not isinstance(invalid_tokens, list) or not valid_ips:
-            await _reset_to_menu(state, message, "Список IP-адресов потерян. Начните заново.")
+        parsed_name = parse_ip_input(list_name)
+        if parsed_name.valid_ips and not parsed_name.invalid_tokens:
+            await message.answer("Сейчас ожидается имя address-list, а не IP-адреса.")
             return
-        await _show_add_confirmation(
+        await _show_add_ip_prompt(
             message,
             state,
             list_name=list_name,
             selected_source="new",
-            valid_ips=valid_ips,
-            invalid_tokens=invalid_tokens,
         )
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_ADD_CONFIRM}:"))
@@ -759,9 +762,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
 
         if current_state == BotFlow.add_waiting_new_list_name.state:
             address_lists = data.get(DATA_ADDRESS_LISTS, [])
-            valid_ips = data.get(DATA_VALID_IPS, [])
-            invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
-            if not isinstance(address_lists, list) or not isinstance(valid_ips, list) or not isinstance(invalid_tokens, list):
+            if not isinstance(address_lists, list):
                 await _reset_to_menu(state, callback, "Сценарий добавления потерян. Начните заново.")
                 await callback.answer()
                 return
@@ -769,31 +770,22 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
                 callback,
                 state,
                 address_lists=address_lists,
-                valid_ips=valid_ips,
-                invalid_tokens=invalid_tokens,
             )
             await callback.answer()
             return
 
         if current_state == BotFlow.add_waiting_confirmation.state:
+            list_name = data.get(DATA_SELECTED_LIST)
             selected_source = data.get(DATA_SELECTED_SOURCE)
-            if selected_source == "new":
-                await _show_new_list_name_prompt(callback, state)
-                await callback.answer()
-                return
-            address_lists = data.get(DATA_ADDRESS_LISTS, [])
-            valid_ips = data.get(DATA_VALID_IPS, [])
-            invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
-            if not isinstance(address_lists, list) or not isinstance(valid_ips, list) or not isinstance(invalid_tokens, list):
+            if not isinstance(list_name, str) or not list_name or not isinstance(selected_source, str):
                 await _reset_to_menu(state, callback, "Сценарий добавления потерян. Начните заново.")
                 await callback.answer()
                 return
-            await _show_add_list_choice(
+            await _show_add_ip_prompt(
                 callback,
                 state,
-                address_lists=address_lists,
-                valid_ips=valid_ips,
-                invalid_tokens=invalid_tokens,
+                list_name=list_name,
+                selected_source=selected_source,
             )
             await callback.answer()
             return

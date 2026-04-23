@@ -55,7 +55,7 @@ python -m tgbot_manage_addresslist
 
 - start the bot and confirm the Telegram menu button contains only `/start`
 - send `/start` and verify the bot resets any active scenario and shows the inline main menu
-- choose `Добавить IP`, send one or more test IP addresses, and confirm the bot offers existing address-lists plus `Создать новый address-list`
+- choose `Добавить IP`, select an existing address-list or `Создать новый address-list`, and confirm the bot only then asks for IP addresses or subnets
 - during add flow, send random text when the bot expects a button and verify it answers with a short explicit warning
 - during delete flow, press an old button from a previous screen and verify the bot reports that the menu is no longer актуально
 - send `/delete_list` and confirm the bot asks for explicit deletion confirmation before removing a list
