@@ -4,11 +4,13 @@ Telegram bot for managing MikroTik firewall `address-list` entries over SSH.
 
 ## Features
 
+- button-first Telegram interface with inline keyboards
 - accepts a list of IP addresses from Telegram
 - shows existing address-lists fetched from MikroTik
 - adds valid IPs into an existing or newly named address-list
 - reports invalid IPs, duplicates, and MikroTik-side errors separately
 - deletes a full address-list with confirmation
+- rejects stale buttons, wrong-step text input, and mixed dialog actions with explicit warnings
 - restricts access to an allowlist of Telegram user IDs
 - runs in Docker
 - publishes a container image to `ghcr.io` from GitHub Actions
@@ -52,8 +54,10 @@ python -m tgbot_manage_addresslist
 ## Manual Verification
 
 - start the bot and confirm the Telegram menu shows `/start`, `/delete_list`, `/cancel`, and `/help`
-- send `/start` and verify the bot asks for IP addresses
-- send one or more test IP addresses and confirm the bot offers existing address-lists
+- send `/start` and verify the bot shows the inline main menu
+- choose `Добавить IP`, send one or more test IP addresses, and confirm the bot offers existing address-lists plus `Создать новый address-list`
+- during add flow, send random text when the bot expects a button and verify it answers with a short explicit warning
+- during delete flow, press an old button from a previous screen and verify the bot reports that the menu is no longer актуально
 - send `/delete_list` and confirm the bot asks for explicit deletion confirmation before removing a list
 
 ## Docker Run
@@ -68,7 +72,7 @@ The image name is already fixed in [compose.yaml](/opt/projects/bot_add_ip_mikro
 
 ## Bot Commands
 
-- `/start` - begin adding IP addresses
+- `/start` - open the main menu
 - `/delete_list` - delete a full address-list after confirmation
 - `/cancel` - cancel the active dialog
 - `/help` - show help

@@ -27,7 +27,7 @@ def configure_logging(level_name: str) -> None:
 async def setup_bot_commands(bot: Bot) -> None:
     await bot.set_my_commands(
         [
-            BotCommand(command="start", description="Добавить IP"),
+            BotCommand(command="start", description="Открыть меню"),
             BotCommand(command="delete_list", description="Удалить address-list"),
             BotCommand(command="cancel", description="Отменить сценарий"),
             BotCommand(command="help", description="Показать помощь"),
