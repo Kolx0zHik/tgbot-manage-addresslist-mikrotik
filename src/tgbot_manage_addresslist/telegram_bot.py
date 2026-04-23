@@ -134,18 +134,12 @@ def _build_delete_list_keyboard(address_lists: list[str], session_id: str) -> In
     return builder.as_markup()
 
 
-def _build_confirmation_keyboard(
-    session_id: str,
-    confirm_action: str,
-    *,
-    include_back: bool = True,
-) -> InlineKeyboardMarkup:
+def _build_confirmation_keyboard(session_id: str, confirm_action: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Подтвердить", callback_data=_encode_callback_data(confirm_action, session_id))
-    if include_back:
-        builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
+    builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
-    builder.adjust(2 if include_back else 1, 1)
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
@@ -374,7 +368,7 @@ async def _show_add_confirmation(
         state,
         event,
         f"Подтвердите добавление {len(valid_ips)} IP в address-list {list_name}.{invalid_note}",
-        _build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM, include_back=False),
+        _build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM),
     )
 
 
