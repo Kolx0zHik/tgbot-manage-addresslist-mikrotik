@@ -25,3 +25,4 @@ This repository hosts a Telegram bot that manages MikroTik firewall address list
 - If a command can delete MikroTik data, require an explicit confirmation step in the bot flow.
 - Keep user-facing messages short and explicit, especially for partial-success reports.
 - Treat `/start` as an unconditional reset to the main menu, and prefer removing stale inline keyboards rather than leaving old active buttons in chat history.
+- New `address-list` names must reject Cyrillic characters; keep validation aligned with the current Telegram bot flow and README.
