@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass
 
 from dotenv import load_dotenv
+
+MIKROTIK_ENV_RE = re.compile(r"^MIKROTIK_(\d+)_")
 
 
 def _require_env(name: str) -> str:
@@ -20,7 +23,7 @@ def _parse_user_ids(raw: str) -> tuple[int, ...]:
         if stripped:
             user_ids.append(int(stripped))
     if not user_ids:
-        raise ValueError("ALLOWED_TELEGRAM_USER_IDS must contain at least one user id")
+        raise ValueError("User id list must contain at least one user id")
     return tuple(user_ids)
 
 
@@ -41,23 +44,40 @@ class MikroTikSettings:
     password: str
 
 
-def _parse_mikrotiks() -> tuple[MikroTikSettings, ...]:
-    mikrotik_ids = tuple(
-        item.lower()
-        for item in _parse_csv_items(_require_env("MIKROTIK_IDS"), field_name="MIKROTIK_IDS")
+def _parse_mikrotik_indices() -> tuple[int, ...]:
+    indices = sorted(
+        {
+            int(match.group(1))
+            for name in os.environ
+            if (match := MIKROTIK_ENV_RE.match(name)) is not None
+        }
     )
+    if not indices:
+        raise ValueError("Environment variable MIKROTIK_1_NAME is required")
+
+    expected = list(range(1, indices[-1] + 1))
+    if indices != expected:
+        for expected_index in expected:
+            if expected_index not in indices:
+                raise ValueError(f"Environment variable MIKROTIK_{expected_index}_NAME is required")
+
+    return tuple(indices)
+
+
+def _parse_mikrotiks() -> tuple[MikroTikSettings, ...]:
+    mikrotik_indices = _parse_mikrotik_indices()
     routers: list[MikroTikSettings] = []
 
-    for mikrotik_id in mikrotik_ids:
-        env_id = mikrotik_id.upper()
+    for mikrotik_index in mikrotik_indices:
+        prefix = f"MIKROTIK_{mikrotik_index}"
         routers.append(
             MikroTikSettings(
-                id=mikrotik_id,
-                name=_require_env(f"MIKROTIK_{env_id}_NAME"),
-                host=_require_env(f"MIKROTIK_{env_id}_HOST"),
-                port=int(os.getenv(f"MIKROTIK_{env_id}_PORT", "22")),
-                username=_require_env(f"MIKROTIK_{env_id}_USERNAME"),
-                password=_require_env(f"MIKROTIK_{env_id}_PASSWORD"),
+                id=str(mikrotik_index),
+                name=_require_env(f"{prefix}_NAME"),
+                host=_require_env(f"{prefix}_HOST"),
+                port=int(os.getenv(f"{prefix}_PORT", "22")),
+                username=_require_env(f"{prefix}_USERNAME"),
+                password=_require_env(f"{prefix}_PASSWORD"),
             )
         )
 
@@ -65,30 +85,18 @@ def _parse_mikrotiks() -> tuple[MikroTikSettings, ...]:
 
 
 def _parse_user_mikrotik_access(
-    *,
-    allowed_user_ids: tuple[int, ...],
-    admin_user_ids: tuple[int, ...],
-    known_mikrotik_ids: set[str],
+    mikrotiks: tuple[MikroTikSettings, ...],
 ) -> dict[int, tuple[str, ...]]:
-    access: dict[int, tuple[str, ...]] = {}
+    access: dict[int, list[str]] = {}
 
-    for user_id in allowed_user_ids:
-        if user_id in admin_user_ids:
-            continue
+    for mikrotik in mikrotiks:
+        raw_user_ids = _require_env(f"MIKROTIK_{mikrotik.id}_TELEGRAM_USER_IDS")
+        for user_id in _parse_user_ids(raw_user_ids):
+            access.setdefault(user_id, [])
+            if mikrotik.id not in access[user_id]:
+                access[user_id].append(mikrotik.id)
 
-        raw = os.getenv(f"USER_MIKROTIK_ACCESS_{user_id}", "").strip()
-        if not raw:
-            raise ValueError(f"Telegram user {user_id} must have at least one assigned MikroTik")
-        mikrotik_ids = tuple(
-            item.lower()
-            for item in _parse_csv_items(raw, field_name=f"USER_MIKROTIK_ACCESS_{user_id}")
-        )
-        unknown_ids = [item for item in mikrotik_ids if item not in known_mikrotik_ids]
-        if unknown_ids:
-            raise ValueError(f"Unknown MikroTik id for user {user_id}: {', '.join(unknown_ids)}")
-        access[user_id] = mikrotik_ids
-
-    return access
+    return {user_id: tuple(mikrotik_ids) for user_id, mikrotik_ids in access.items()}
 
 
 @dataclass(frozen=True, slots=True)
@@ -104,25 +112,13 @@ class Settings:
     @classmethod
     def from_env(cls) -> "Settings":
         load_dotenv()
-        allowed_telegram_user_ids = _parse_user_ids(_require_env("ALLOWED_TELEGRAM_USER_IDS"))
         admin_telegram_user_ids = _parse_user_ids(_require_env("ADMIN_TELEGRAM_USER_IDS"))
-        admin_user_ids = set(admin_telegram_user_ids)
-        allowed_user_ids = set(allowed_telegram_user_ids)
-        if not admin_user_ids.issubset(allowed_user_ids):
-            raise ValueError("ADMIN_TELEGRAM_USER_IDS must be a subset of ALLOWED_TELEGRAM_USER_IDS")
-
         mikrotiks = _parse_mikrotiks()
         mikrotiks_by_id = {item.id: item for item in mikrotiks}
-        user_mikrotik_access = _parse_user_mikrotik_access(
-            allowed_user_ids=allowed_telegram_user_ids,
-            admin_user_ids=admin_telegram_user_ids,
-            known_mikrotik_ids=set(mikrotiks_by_id),
+        user_mikrotik_access = _parse_user_mikrotik_access(mikrotiks)
+        allowed_telegram_user_ids = tuple(
+            sorted(set(admin_telegram_user_ids) | set(user_mikrotik_access))
         )
-
-        regular_user_ids = allowed_user_ids - admin_user_ids
-        for user_id in regular_user_ids:
-            if not user_mikrotik_access.get(user_id):
-                raise ValueError(f"Telegram user {user_id} must have at least one assigned MikroTik")
 
         return cls(
             telegram_bot_token=_require_env("TG_BOT_TOKEN"),

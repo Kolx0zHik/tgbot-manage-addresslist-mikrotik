@@ -61,22 +61,26 @@ EN: Copy `.env.example` to `.env` and fill in the values.
 Required / Обязательные переменные:
 
 - `TG_BOT_TOKEN`
-- `ALLOWED_TELEGRAM_USER_IDS`
 - `ADMIN_TELEGRAM_USER_IDS`
-- `MIKROTIK_IDS`
 
-Per-router required variables / Обязательные переменные для каждого MikroTik из `MIKROTIK_IDS`:
+Per-router required variables / Обязательные переменные для каждого MikroTik:
 
-- `MIKROTIK_<ID>_NAME`
-- `MIKROTIK_<ID>_HOST`
-- `MIKROTIK_<ID>_PORT`
-- `MIKROTIK_<ID>_USERNAME`
-- `MIKROTIK_<ID>_PASSWORD`
+- `MIKROTIK_1_NAME`
+- `MIKROTIK_1_HOST`
+- `MIKROTIK_1_PORT`
+- `MIKROTIK_1_USERNAME`
+- `MIKROTIK_1_PASSWORD`
+- `MIKROTIK_1_TELEGRAM_USER_IDS`
+
+RU: Добавляйте следующие MikroTik как `MIKROTIK_2_*`, `MIKROTIK_3_*` и так далее без пропусков.  
+EN: Add the next routers as `MIKROTIK_2_*`, `MIKROTIK_3_*`, and so on without gaps.
 
 Optional / Необязательные переменные:
 
-- `USER_MIKROTIK_ACCESS_<telegram_user_id>` — required for every non-admin allowed user / обязательно для каждого allowed-пользователя без admin-прав
 - `LOG_LEVEL` — defaults to `INFO` / по умолчанию `INFO`
+
+RU: `ALLOWED_TELEGRAM_USER_IDS` больше не нужен. Бот собирает доступ автоматически из `ADMIN_TELEGRAM_USER_IDS` и `MIKROTIK_N_TELEGRAM_USER_IDS`.  
+EN: `ALLOWED_TELEGRAM_USER_IDS` is no longer needed. The bot builds access automatically from `ADMIN_TELEGRAM_USER_IDS` and `MIKROTIK_N_TELEGRAM_USER_IDS`.
 
 RU: Используйте отдельного пользователя MikroTik для бота.  
 EN: Use a dedicated MikroTik user for the bot.
