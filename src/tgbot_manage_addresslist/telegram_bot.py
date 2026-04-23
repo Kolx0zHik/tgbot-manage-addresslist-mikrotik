@@ -312,7 +312,7 @@ async def _show_connecting_to_mikrotik(
     *,
     mikrotik_name: str,
 ) -> None:
-    await _render_screen(state, event, f"Подключение к MikroTik {mikrotik_name}...")
+    await _render_screen(state, event, f"🟢 Подключаемся к MikroTik {mikrotik_name}...")
 
 
 async def _mikrotik_is_available(deps: BotDependencies, mikrotik_id: str) -> bool:
@@ -361,7 +361,7 @@ async def _show_mikrotik_selection_menu(
             DATA_ACTIVE_MESSAGE_ID: active_data.get(DATA_ACTIVE_MESSAGE_ID),
         }
     )
-    text = "Выберите MikroTik."
+    text = "🌐 Выберите MikroTik\nВыберите роутер, с которым хотите работать."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(
@@ -390,7 +390,7 @@ async def _show_mikrotik_actions_menu(
             DATA_SELECTED_MIKROTIK_NAME: mikrotik_name,
         }
     )
-    text = f"Выбран MikroTik: {mikrotik_name}\nВыберите действие."
+    text = f"📍 MikroTik: {mikrotik_name}\nЧто хотите сделать?"
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_mikrotik_actions_keyboard(session_id))
@@ -474,7 +474,7 @@ async def _show_add_list_choice(
             DATA_ADDRESS_LISTS: address_lists,
         }
     )
-    text = f"MikroTik: {mikrotik_name}\nВыберите существующий address-list или создайте новый."
+    text = f"📝 MikroTik: {mikrotik_name}\nВыберите существующий address-list или создайте новый."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_add_list_keyboard(address_lists, session_id))
@@ -499,7 +499,7 @@ async def _show_new_list_name_prompt(
             DATA_FLOW_SESSION_ID: session_id,
         }
     )
-    text = f"MikroTik: {mikrotik_name}\nОтправьте имя нового address-list."
+    text = f"📝 MikroTik: {mikrotik_name}\nОтправьте имя нового address-list."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
@@ -530,7 +530,7 @@ async def _show_add_ip_prompt(
             DATA_INVALID_TOKENS: [],
         }
     )
-    text = f"MikroTik: {mikrotik_name}\nОтправьте IP-адреса или подсети для address-list {list_name}."
+    text = f"📝 MikroTik: {mikrotik_name}\nОтправьте IP-адреса или подсети для address-list {list_name}."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
@@ -569,7 +569,7 @@ async def _show_add_confirmation(
         state,
         event,
         (
-            f"MikroTik: {mikrotik_name}\n"
+            f"📝 MikroTik: {mikrotik_name}\n"
             f"Подтвердите добавление {len(valid_ips)} IP в address-list {list_name}.{invalid_note}"
         ),
         _build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM),
@@ -615,7 +615,7 @@ async def _start_delete_flow(event: Message | CallbackQuery, state: FSMContext, 
     await _render_screen(
         state,
         event,
-        f"MikroTik: {mikrotik_name}\nВыберите address-list для полного удаления.",
+        f"🗑️ MikroTik: {mikrotik_name}\nВыберите address-list для полного удаления.",
         _build_delete_list_keyboard(address_lists, session_id),
     )
 
@@ -639,7 +639,7 @@ async def _show_delete_confirmation(event: Message | CallbackQuery, state: FSMCo
         state,
         event,
         (
-            f"MikroTik: {mikrotik_name}\n"
+            f"🗑️ MikroTik: {mikrotik_name}\n"
             f"Подтвердите удаление address-list {list_name}. Это удалит все IP-адреса внутри него."
         ),
         _build_confirmation_keyboard(session_id, ACTION_DELETE_CONFIRM),

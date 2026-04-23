@@ -24,9 +24,10 @@ from tgbot_manage_addresslist.telegram_bot import (
 async def test_show_add_confirmation_persists_ips_in_state(monkeypatch: pytest.MonkeyPatch) -> None:
     storage = MemoryStorage()
     state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=1, user_id=1))
+    rendered: dict[str, object] = {}
 
     async def fake_render_screen(state, event, text, reply_markup=None) -> None:
-        return None
+        rendered["text"] = text
 
     monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
     await state.update_data(
@@ -50,15 +51,17 @@ async def test_show_add_confirmation_persists_ips_in_state(monkeypatch: pytest.M
     assert data[DATA_SELECTED_LIST] == "test"
     assert data[DATA_VALID_IPS] == ["8.8.8.8"]
     assert data[DATA_INVALID_TOKENS] == []
+    assert rendered["text"] == "📝 MikroTik: Office\nПодтвердите добавление 1 IP в address-list test."
 
 
 @pytest.mark.asyncio
 async def test_show_add_ip_prompt_resets_pending_ips(monkeypatch: pytest.MonkeyPatch) -> None:
     storage = MemoryStorage()
     state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=1, user_id=1))
+    rendered: dict[str, object] = {}
 
     async def fake_render_screen(state, event, text, reply_markup=None) -> None:
-        return None
+        rendered["text"] = text
 
     monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
     await state.update_data(
@@ -81,6 +84,7 @@ async def test_show_add_ip_prompt_resets_pending_ips(monkeypatch: pytest.MonkeyP
     assert data[DATA_SELECTED_SOURCE] == "new"
     assert data[DATA_VALID_IPS] == []
     assert data[DATA_INVALID_TOKENS] == []
+    assert rendered["text"] == "📝 MikroTik: Office\nОтправьте IP-адреса или подсети для address-list test."
 
 
 def test_contains_cyrillic_detects_cyrillic_chars() -> None:

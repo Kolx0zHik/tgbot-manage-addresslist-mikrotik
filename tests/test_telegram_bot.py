@@ -83,7 +83,7 @@ async def test_show_mikrotik_selection_menu_sets_router_selection_state(
     await _show_mikrotik_selection_menu(StubEvent(), state, deps)
 
     assert await state.get_state() == BotFlow.mikrotik_selection.state
-    assert rendered["text"] == "Выберите MikroTik."
+    assert rendered["text"] == "🌐 Выберите MikroTik\nВыберите роутер, с которым хотите работать."
 
 
 @pytest.mark.asyncio
@@ -92,9 +92,10 @@ async def test_show_mikrotik_actions_menu_persists_selected_router(
 ) -> None:
     storage = MemoryStorage()
     state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=1, user_id=1))
+    rendered: dict[str, object] = {}
 
     async def fake_render_screen(state, event, text, reply_markup=None) -> None:
-        return None
+        rendered["text"] = text
 
     monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
 
@@ -109,6 +110,7 @@ async def test_show_mikrotik_actions_menu_persists_selected_router(
     assert await state.get_state() == BotFlow.mikrotik_actions.state
     assert data[DATA_SELECTED_MIKROTIK_ID] == "mt1"
     assert data[DATA_SELECTED_MIKROTIK_NAME] == "Office"
+    assert rendered["text"] == "📍 MikroTik: Office\nЧто хотите сделать?"
 
 
 @pytest.mark.asyncio
@@ -126,7 +128,7 @@ async def test_show_connecting_to_mikrotik_renders_progress_message(
 
     await _show_connecting_to_mikrotik(object(), state, mikrotik_name="Office")
 
-    assert rendered["text"] == "Подключение к MikroTik Office..."
+    assert rendered["text"] == "🟢 Подключаемся к MikroTik Office..."
 
 
 @pytest.mark.asyncio
