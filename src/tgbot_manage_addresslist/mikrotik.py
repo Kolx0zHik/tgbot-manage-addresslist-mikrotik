@@ -112,9 +112,10 @@ class MikroTikSSHClient:
             f"address={routeros_quote(ip_address)}"
         )
         result = await self._run(command)
-        if result.exit_status == 0:
+        stdout_lowered = result.stdout.lower()
+        if result.exit_status == 0 and not stdout_lowered.startswith("failure:"):
             return None
-        return result.stderr or "Unknown MikroTik error"
+        return result.stderr or result.stdout or "Unknown MikroTik error"
 
     async def delete_address_list(self, list_name: str) -> int:
         inspect_command = (
