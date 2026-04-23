@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from ipaddress import ip_address
+from ipaddress import ip_address, ip_network
 import re
 
 from tgbot_manage_addresslist.mikrotik import MikroTikClientProtocol
@@ -27,8 +27,11 @@ def parse_ip_input(raw_text: str) -> ParsedIpInput:
         try:
             normalized = str(ip_address(token))
         except ValueError:
-            invalid_tokens.append(token)
-            continue
+            try:
+                normalized = str(ip_network(token, strict=True))
+            except ValueError:
+                invalid_tokens.append(token)
+                continue
         if normalized in seen:
             continue
         seen.add(normalized)
