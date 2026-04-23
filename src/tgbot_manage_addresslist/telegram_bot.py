@@ -793,7 +793,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
             await callback.answer()
             return
-        await callback.answer("Подключаемся...")
+        await callback.answer("Подключаемся...", show_alert=True)
         await _show_connecting_to_mikrotik(
             callback,
             state,
