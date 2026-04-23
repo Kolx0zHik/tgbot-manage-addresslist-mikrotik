@@ -7,7 +7,7 @@ from typing import Protocol
 
 import asyncssh
 
-from tgbot_manage_addresslist.settings import Settings
+from tgbot_manage_addresslist.settings import MikroTikSettings
 
 
 LIST_VALUE_RE = re.compile(r'(?:^|\s)list=(?:"((?:[^"\\]|\\.)*)"|(\S+))')
@@ -71,22 +71,24 @@ def parse_addresses(output: str) -> list[str]:
 
 
 class MikroTikSSHClient:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: MikroTikSettings) -> None:
         self._settings = settings
 
     async def _run(self, command: str) -> CommandResult:
         logger.info(
-            "Connecting to MikroTik over SSH: host=%s port=%s user=%s",
-            self._settings.mikrotik_host,
-            self._settings.mikrotik_port,
-            self._settings.mikrotik_username,
+            "Connecting to MikroTik over SSH: id=%s name=%s host=%s port=%s user=%s",
+            self._settings.id,
+            self._settings.name,
+            self._settings.host,
+            self._settings.port,
+            self._settings.username,
         )
         try:
             async with asyncssh.connect(
-                host=self._settings.mikrotik_host,
-                port=self._settings.mikrotik_port,
-                username=self._settings.mikrotik_username,
-                password=self._settings.mikrotik_password,
+                host=self._settings.host,
+                port=self._settings.port,
+                username=self._settings.username,
+                password=self._settings.password,
                 known_hosts=None,
             ) as connection:
                 result = await connection.run(command, check=False)

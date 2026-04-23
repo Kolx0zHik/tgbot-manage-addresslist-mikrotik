@@ -8,6 +8,8 @@ EN: Telegram bot for managing MikroTik firewall `address-list` entries over SSH.
 RU:
 - Бот работает в button-first режиме: основной сценарий идет через inline-кнопки.
 - Telegram menu button содержит только `/start` и служит безопасным возвратом в главное меню.
+- Бот сначала предлагает выбрать MikroTik, а затем действия для выбранного роутера.
+- Админы видят все MikroTik, обычные пользователи видят только назначенные им.
 - Бот умеет добавлять IP-адреса и CIDR-подсети в существующий или новый `address-list`.
 - Бот отдельно показывает добавленные адреса, дубликаты, невалидные значения и ошибки MikroTik.
 - Полное удаление `address-list` выполняется только после явного подтверждения.
@@ -15,6 +17,8 @@ RU:
 EN:
 - The bot uses a button-first UX: main flows are driven by inline keyboards.
 - The Telegram menu button contains only `/start` and acts as the safe way back to the main menu.
+- The bot asks the user to choose a MikroTik router first and only then shows router-specific actions.
+- Admins can see all MikroTik routers, while regular users can only see routers assigned to them.
 - The bot can add IP addresses and CIDR subnets to an existing or new `address-list`.
 - The bot reports added entries, duplicates, invalid values, and MikroTik-side errors separately.
 - Full `address-list` deletion requires explicit confirmation.
@@ -23,6 +27,8 @@ EN:
 
 - RU: inline-кнопки для основных сценариев  
   EN: inline keyboards for the main flows
+- RU: сначала выбор MikroTik, затем работа внутри выбранного роутера  
+  EN: router-first navigation before add/delete actions
 - RU: добавление IP-адресов и CIDR-подсетей  
   EN: add IP addresses and CIDR subnets
 - RU: выбор существующего `address-list` до ввода IP  
@@ -35,6 +41,8 @@ EN:
   EN: reject stale buttons and wrong-step actions
 - RU: allowlist по Telegram user ID  
   EN: allowlist by Telegram user ID
+- RU: админы управляют всеми MikroTik, обычные пользователи только своими  
+  EN: admins manage all MikroTik routers, regular users only their assigned routers
 - RU: Docker и публикация в GHCR  
   EN: Docker support and GHCR publishing
 
@@ -53,15 +61,26 @@ EN: Copy `.env.example` to `.env` and fill in the values.
 Required / Обязательные переменные:
 
 - `TG_BOT_TOKEN`
-- `ALLOWED_TELEGRAM_USER_IDS`
-- `MIKROTIK_HOST`
-- `MIKROTIK_PORT`
-- `MIKROTIK_USERNAME`
-- `MIKROTIK_PASSWORD`
+- `ADMIN_TELEGRAM_USER_IDS`
+
+Per-router required variables / Обязательные переменные для каждого MikroTik:
+
+- `MIKROTIK_1_NAME`
+- `MIKROTIK_1_HOST`
+- `MIKROTIK_1_PORT`
+- `MIKROTIK_1_USERNAME`
+- `MIKROTIK_1_PASSWORD`
+- `MIKROTIK_1_TELEGRAM_USER_IDS`
+
+RU: Добавляйте следующие MikroTik как `MIKROTIK_2_*`, `MIKROTIK_3_*` и так далее без пропусков.  
+EN: Add the next routers as `MIKROTIK_2_*`, `MIKROTIK_3_*`, and so on without gaps.
 
 Optional / Необязательные переменные:
 
 - `LOG_LEVEL` — defaults to `INFO` / по умолчанию `INFO`
+
+RU: `ALLOWED_TELEGRAM_USER_IDS` больше не нужен. Бот собирает доступ автоматически из `ADMIN_TELEGRAM_USER_IDS` и `MIKROTIK_N_TELEGRAM_USER_IDS`.  
+EN: `ALLOWED_TELEGRAM_USER_IDS` is no longer needed. The bot builds access automatically from `ADMIN_TELEGRAM_USER_IDS` and `MIKROTIK_N_TELEGRAM_USER_IDS`.
 
 RU: Используйте отдельного пользователя MikroTik для бота.  
 EN: Use a dedicated MikroTik user for the bot.
@@ -89,35 +108,51 @@ EN: The image name is already fixed in [compose.yaml](/opt/projects/bot_add_ip_m
 
 ## Bot Flow / Сценарий работы
 
+### Router Selection / Выбор MikroTik
+
+RU:
+1. Отправьте `/start`.
+2. Выберите доступный MikroTik.
+3. Бот покажет действия для выбранного роутера.
+
+EN:
+1. Send `/start`.
+2. Choose an accessible MikroTik router.
+3. The bot will show actions for the selected router.
+
 ### Add Flow / Добавление адресов
 
 RU:
-1. Нажмите `Добавить IP`.
-2. Выберите существующий `address-list` или нажмите `Создать новый address-list`.
-3. Если создается новый список, отправьте его имя.
-4. Бот попросит ввести IP-адреса или CIDR-подсети для выбранного списка.
-5. Бот покажет подтверждение.
-6. После подтверждения бот добавит адреса и покажет результат.
+1. Выберите MikroTik.
+2. Нажмите `Добавить IP`.
+3. Выберите существующий `address-list` или нажмите `Создать новый address-list`.
+4. Если создается новый список, отправьте его имя.
+5. Бот попросит ввести IP-адреса или CIDR-подсети для выбранного списка.
+6. Бот покажет подтверждение.
+7. После подтверждения бот добавит адреса и покажет результат.
 
 EN:
-1. Press `Добавить IP`.
-2. Choose an existing `address-list` or press `Создать новый address-list`.
-3. If creating a new list, send its name.
-4. The bot will ask for IP addresses or CIDR subnets for the selected list.
-5. The bot will show a confirmation step.
-6. After confirmation, the bot will add the entries and show the result.
+1. Choose a MikroTik router.
+2. Press `Добавить IP`.
+3. Choose an existing `address-list` or press `Создать новый address-list`.
+4. If creating a new list, send its name.
+5. The bot will ask for IP addresses or CIDR subnets for the selected list.
+6. The bot will show a confirmation step.
+7. After confirmation, the bot will add the entries and show the result.
 
 ### Delete Flow / Удаление списка
 
 RU:
-1. Нажмите `Удалить address-list`.
-2. Выберите список.
-3. Подтвердите удаление.
+1. Выберите MikroTik.
+2. Нажмите `Удалить address-list`.
+3. Выберите список.
+4. Подтвердите удаление.
 
 EN:
-1. Press `Удалить address-list`.
-2. Choose a list.
-3. Confirm the deletion.
+1. Choose a MikroTik router.
+2. Press `Удалить address-list`.
+3. Choose a list.
+4. Confirm the deletion.
 
 ## Validation Rules / Правила валидации
 
@@ -137,10 +172,16 @@ EN:
 
 - RU: убедиться, что Telegram menu button содержит только `/start`  
   EN: confirm the Telegram menu button contains only `/start`
-- RU: отправить `/start` и убедиться, что бот сбрасывает активный сценарий и открывает главное меню  
-  EN: send `/start` and confirm the bot resets any active flow and opens the main menu
-- RU: пройти сценарий `Добавить IP` для существующего списка  
-  EN: complete the `Добавить IP` flow for an existing list
+- RU: отправить `/start` и убедиться, что бот сбрасывает активный сценарий и открывает выбор MikroTik  
+  EN: send `/start` and confirm the bot resets any active flow and opens MikroTik selection
+- RU: проверить, что админ видит все MikroTik в первом меню  
+  EN: verify that an admin can see all MikroTik routers in the first menu
+- RU: проверить, что обычный пользователь видит только назначенные ему MikroTik  
+  EN: verify that a regular user sees only assigned MikroTik routers
+- RU: выбрать MikroTik и убедиться, что бот показывает действия именно для него  
+  EN: choose a MikroTik router and confirm the bot shows router-specific actions
+- RU: пройти сценарий `Добавить IP` для существующего списка на выбранном MikroTik  
+  EN: complete the `Добавить IP` flow for an existing list on the selected MikroTik
 - RU: пройти сценарий `Создать новый address-list` и затем добавить IP  
   EN: complete the `Создать новый address-list` flow and then add IPs
 - RU: проверить, что CIDR-подсети принимаются  
@@ -149,15 +190,15 @@ EN:
   EN: verify that duplicates are reported under `Дубликаты`
 - RU: проверить, что имя нового списка с кириллицей отклоняется  
   EN: verify that a new list name containing Cyrillic is rejected
-- RU: нажать старую кнопку из истории и убедиться, что бот сообщает о неактуальном меню  
-  EN: press an old button from history and confirm the bot reports that the menu is stale
-- RU: убедиться, что удаление `address-list` требует явного подтверждения  
-  EN: confirm that deleting an `address-list` requires explicit confirmation
+- RU: нажать старую кнопку выбора MikroTik или старую action-кнопку и убедиться, что бот сообщает о неактуальном меню  
+  EN: press an old MikroTik-selection or old action button and confirm the bot reports that the menu is stale
+- RU: убедиться, что удаление `address-list` требует явного подтверждения и удаляет список только на выбранном MikroTik  
+  EN: confirm that deleting an `address-list` requires explicit confirmation and only affects the selected MikroTik
 
 ## Supported Commands / Поддерживаемые команды
 
 - `/start` — RU: открыть главное меню; EN: open the main menu
-- `/delete_list` — RU: открыть сценарий удаления списка; EN: open the list deletion flow
+- `/delete_list` — RU: открыть сценарий удаления списка на выбранном MikroTik; EN: open the list deletion flow for the selected MikroTik
 - `/cancel` — RU: отменить текущий сценарий; EN: cancel the current flow
 - `/help` — RU: показать краткую помощь; EN: show short help
 
