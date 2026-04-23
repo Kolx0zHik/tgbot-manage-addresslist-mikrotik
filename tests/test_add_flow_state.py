@@ -12,6 +12,7 @@ from tgbot_manage_addresslist.telegram_bot import (
     DATA_SELECTED_LIST,
     DATA_SELECTED_SOURCE,
     DATA_VALID_IPS,
+    _contains_cyrillic,
     _show_add_ip_prompt,
     _show_add_confirmation,
 )
@@ -66,3 +67,9 @@ async def test_show_add_ip_prompt_resets_pending_ips(monkeypatch: pytest.MonkeyP
     assert data[DATA_SELECTED_SOURCE] == "new"
     assert data[DATA_VALID_IPS] == []
     assert data[DATA_INVALID_TOKENS] == []
+
+
+def test_contains_cyrillic_detects_cyrillic_chars() -> None:
+    assert _contains_cyrillic("тест")
+    assert _contains_cyrillic("vpn-тест")
+    assert not _contains_cyrillic("vpn-test_01")

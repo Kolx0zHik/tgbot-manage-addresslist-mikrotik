@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import logging
+import re
 import secrets
 
 from aiogram import Dispatcher, F
@@ -22,6 +23,7 @@ from tgbot_manage_addresslist.settings import Settings
 
 
 logger = logging.getLogger(__name__)
+CYRILLIC_RE = re.compile(r"[А-Яа-яЁё]")
 
 FLOW_MENU = "menu"
 FLOW_ADD = "add"
@@ -151,6 +153,10 @@ def _help_text() -> str:
         "/cancel - отменить текущий сценарий\n"
         "Текстом отправляются только IP-адреса и имя нового address-list."
     )
+
+
+def _contains_cyrillic(value: str) -> bool:
+    return CYRILLIC_RE.search(value) is not None
 
 
 def _format_add_result(result: AddOperationResult) -> str:
@@ -653,6 +659,9 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         list_name = (message.text or "").strip()
         if not list_name:
             await message.answer("Имя address-list не может быть пустым.")
+            return
+        if _contains_cyrillic(list_name):
+            await message.answer("Имя address-list не должно содержать кириллицу.")
             return
         parsed_name = parse_ip_input(list_name)
         if parsed_name.valid_ips and not parsed_name.invalid_tokens:
