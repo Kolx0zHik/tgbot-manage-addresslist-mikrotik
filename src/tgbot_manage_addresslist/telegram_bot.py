@@ -793,6 +793,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
             await callback.answer()
             return
+        await callback.answer("Подключаемся...")
         await _show_connecting_to_mikrotik(
             callback,
             state,
@@ -805,7 +806,6 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
                 deps,
                 notice=f"MikroTik {mikrotik.name} недоступен.",
             )
-            await callback.answer()
             return
         await _show_mikrotik_actions_menu(
             callback,
@@ -813,7 +813,6 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             mikrotik_id=mikrotik.id,
             mikrotik_name=mikrotik.name,
         )
-        await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_ADD}:"))
     async def router_add_handler(callback: CallbackQuery, state: FSMContext) -> None:
