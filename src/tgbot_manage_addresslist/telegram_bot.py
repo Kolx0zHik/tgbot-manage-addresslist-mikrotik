@@ -211,8 +211,6 @@ async def _render_screen(
     if isinstance(event, CallbackQuery) and event.message is not None:
         active_chat_id = event.message.chat.id
         active_message_id = event.message.message_id
-
-    if active_chat_id is not None and active_message_id is not None:
         try:
             await bot.edit_message_text(
                 chat_id=active_chat_id,
@@ -228,7 +226,11 @@ async def _render_screen(
             )
             return
         except TelegramBadRequest:
-            logger.info("Falling back to sending a fresh message for chat=%s message=%s", active_chat_id, active_message_id)
+            logger.info(
+                "Falling back to sending a fresh message for chat=%s message=%s",
+                active_chat_id,
+                active_message_id,
+            )
 
     sent_message = await target.answer(text, reply_markup=reply_markup)
     await state.update_data(
