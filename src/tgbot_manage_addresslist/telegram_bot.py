@@ -89,6 +89,10 @@ def _format_delete_result(result: DeleteOperationResult) -> str:
     return f"Address-list {result.list_name} удален.\nУдалено записей: {result.removed_count}"
 
 
+async def _reply_mikrotik_error(message: Message) -> None:
+    await message.answer("Не удалось подключиться к MikroTik. Проверьте SSH_HOST/PORT и доступность роутера.")
+
+
 async def _process_ip_input(message: Message, state: FSMContext, deps: BotDependencies) -> bool:
     if not message.text:
         await message.answer("Нужен текст со списком IP адресов.")
@@ -102,7 +106,12 @@ async def _process_ip_input(message: Message, state: FSMContext, deps: BotDepend
         return True
 
     logger.info("Received %s valid IPs from Telegram user %s", len(parsed.valid_ips), message.from_user.id if message.from_user else "unknown")
-    address_lists = await deps.address_list_manager.fetch_address_lists()
+    try:
+        address_lists = await deps.address_list_manager.fetch_address_lists()
+    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        logger.exception("Failed to fetch address-lists from MikroTik")
+        await _reply_mikrotik_error(message)
+        return True
     await state.update_data(
         valid_ips=parsed.valid_ips,
         invalid_tokens=parsed.invalid_tokens,
@@ -168,11 +177,18 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             return
         data = await state.get_data()
         list_name = data.get("address_lists", [])[int(raw_index)]
-        result = await deps.address_list_manager.add_ips(
-            list_name=list_name,
-            valid_ips=data.get("valid_ips", []),
-            invalid_tokens=data.get("invalid_tokens", []),
-        )
+        try:
+            result = await deps.address_list_manager.add_ips(
+                list_name=list_name,
+                valid_ips=data.get("valid_ips", []),
+                invalid_tokens=data.get("invalid_tokens", []),
+            )
+        except (ConnectionError, OSError, TimeoutError, RuntimeError):
+            logger.exception("Failed to add IPs to MikroTik list %s", list_name)
+            await state.clear()
+            await _reply_mikrotik_error(callback.message)
+            await callback.answer()
+            return
         await state.clear()
         await callback.message.answer(_format_add_result(result))
         await callback.answer()
@@ -186,11 +202,17 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await message.answer("Имя address-list не может быть пустым.")
             return
         data = await state.get_data()
-        result = await deps.address_list_manager.add_ips(
-            list_name=list_name,
-            valid_ips=data.get("valid_ips", []),
-            invalid_tokens=data.get("invalid_tokens", []),
-        )
+        try:
+            result = await deps.address_list_manager.add_ips(
+                list_name=list_name,
+                valid_ips=data.get("valid_ips", []),
+                invalid_tokens=data.get("invalid_tokens", []),
+            )
+        except (ConnectionError, OSError, TimeoutError, RuntimeError):
+            logger.exception("Failed to add IPs to new MikroTik list %s", list_name)
+            await state.clear()
+            await _reply_mikrotik_error(message)
+            return
         await state.clear()
         await message.answer(_format_add_result(result))
 
@@ -199,7 +221,12 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
         await state.clear()
-        address_lists = await deps.address_list_manager.fetch_address_lists()
+        try:
+            address_lists = await deps.address_list_manager.fetch_address_lists()
+        except (ConnectionError, OSError, TimeoutError, RuntimeError):
+            logger.exception("Failed to fetch address-lists for delete flow")
+            await _reply_mikrotik_error(message)
+            return
         if not address_lists:
             await message.answer("На MikroTik не найдено ни одного address-list.")
             return
@@ -239,7 +266,14 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
         data = await state.get_data()
-        result = await deps.address_list_manager.delete_list(data["delete_list_name"])
+        try:
+            result = await deps.address_list_manager.delete_list(data["delete_list_name"])
+        except (ConnectionError, OSError, TimeoutError, RuntimeError):
+            logger.exception("Failed to delete MikroTik list %s", data.get("delete_list_name"))
+            await state.clear()
+            await _reply_mikrotik_error(callback.message)
+            await callback.answer()
+            return
         await state.clear()
         await callback.message.answer(_format_delete_result(result))
         await callback.answer()
