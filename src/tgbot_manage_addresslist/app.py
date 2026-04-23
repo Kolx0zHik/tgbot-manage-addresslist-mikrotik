@@ -7,7 +7,11 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
-from tgbot_manage_addresslist.logic import AddressListManager, AddressListService
+from tgbot_manage_addresslist.logic import (
+    AddressListManager,
+    AddressListService,
+    UserAccessResolver,
+)
 from tgbot_manage_addresslist.mikrotik import MikroTikSSHClient
 from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 from tgbot_manage_addresslist.telegram_bot import BotDependencies, register_handlers
@@ -54,23 +58,29 @@ async def log_startup_health_checks(
             )
 
 
+def build_dependencies(settings: Settings) -> BotDependencies:
+    managers_by_id = {
+        mikrotik.id: AddressListManager(MikroTikSSHClient(mikrotik))
+        for mikrotik in settings.mikrotiks
+    }
+    return BotDependencies(
+        settings=settings,
+        address_list_service=AddressListService(managers_by_id),
+        user_access_resolver=UserAccessResolver(settings),
+    )
+
+
 async def run() -> None:
     settings = Settings.from_env()
     configure_logging(settings.log_level)
     bot = Bot(token=settings.telegram_bot_token)
     dispatcher = Dispatcher(storage=MemoryStorage())
-    managers_by_id = {
-        mikrotik.id: AddressListManager(MikroTikSSHClient(mikrotik))
-        for mikrotik in settings.mikrotiks
-    }
-    service = AddressListService(managers_by_id)
-    manager = managers_by_id[settings.mikrotiks[0].id]
-    deps = BotDependencies(settings=settings, address_list_manager=manager)
+    deps = build_dependencies(settings)
     register_handlers(dispatcher, deps)
     await setup_bot_commands(bot)
 
     logger.info("Starting Telegram bot polling")
-    await log_startup_health_checks(service, settings.mikrotiks)
+    await log_startup_health_checks(deps.address_list_service, settings.mikrotiks)
 
     try:
         await dispatcher.start_polling(bot)
