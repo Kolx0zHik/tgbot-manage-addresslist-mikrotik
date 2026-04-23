@@ -5,6 +5,7 @@ from ipaddress import ip_address, ip_network
 import re
 
 from tgbot_manage_addresslist.mikrotik import MikroTikClientProtocol
+from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 
 
 TOKEN_SPLIT_RE = re.compile(r"[\s,;]+")
@@ -100,3 +101,50 @@ class AddressListManager:
     async def delete_list(self, list_name: str) -> DeleteOperationResult:
         removed_count = await self._mikrotik_client.delete_address_list(list_name)
         return DeleteOperationResult(list_name=list_name, removed_count=removed_count)
+
+
+class AddressListService:
+    def __init__(self, managers_by_id: dict[str, AddressListManager]) -> None:
+        self._managers_by_id = managers_by_id
+
+    def _manager_for(self, mikrotik_id: str) -> AddressListManager:
+        try:
+            return self._managers_by_id[mikrotik_id]
+        except KeyError as exc:
+            raise ValueError(f"Unknown MikroTik id: {mikrotik_id}") from exc
+
+    async def fetch_address_lists(self, mikrotik_id: str) -> list[str]:
+        return await self._manager_for(mikrotik_id).fetch_address_lists()
+
+    async def add_ips(
+        self,
+        mikrotik_id: str,
+        list_name: str,
+        valid_ips: list[str],
+        invalid_tokens: list[str],
+    ) -> AddOperationResult:
+        return await self._manager_for(mikrotik_id).add_ips(list_name, valid_ips, invalid_tokens)
+
+    async def delete_list(self, mikrotik_id: str, list_name: str) -> DeleteOperationResult:
+        return await self._manager_for(mikrotik_id).delete_list(list_name)
+
+
+class UserAccessResolver:
+    def __init__(self, settings: Settings) -> None:
+        self._settings = settings
+
+    def is_allowed(self, user_id: int) -> bool:
+        return user_id in self._settings.allowed_telegram_user_ids
+
+    def is_admin(self, user_id: int) -> bool:
+        return user_id in self._settings.admin_telegram_user_ids
+
+    def visible_mikrotiks_for(self, user_id: int) -> tuple[MikroTikSettings, ...]:
+        if self.is_admin(user_id):
+            return self._settings.mikrotiks
+
+        allowed_ids = self._settings.user_mikrotik_access.get(user_id, ())
+        return tuple(self._settings.mikrotiks_by_id[item_id] for item_id in allowed_ids)
+
+    def can_access(self, user_id: int, mikrotik_id: str) -> bool:
+        return mikrotik_id in {item.id for item in self.visible_mikrotiks_for(user_id)}
