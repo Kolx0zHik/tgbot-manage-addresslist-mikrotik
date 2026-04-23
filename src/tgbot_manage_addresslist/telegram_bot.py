@@ -30,7 +30,6 @@ FLOW_DELETE = "delete"
 ACTION_ADD = "add"
 ACTION_DELETE = "del"
 ACTION_HELP = "help"
-ACTION_HOME = "home"
 ACTION_CANCEL = "cancel"
 ACTION_BACK = "back"
 ACTION_ADD_EXISTING = "alist"
@@ -228,6 +227,20 @@ async def _render_screen(
         except TelegramBadRequest:
             logger.info(
                 "Falling back to sending a fresh message for chat=%s message=%s",
+                active_chat_id,
+                active_message_id,
+            )
+
+    if active_chat_id is not None and active_message_id is not None:
+        try:
+            await bot.edit_message_reply_markup(
+                chat_id=active_chat_id,
+                message_id=active_message_id,
+                reply_markup=None,
+            )
+        except TelegramBadRequest:
+            logger.info(
+                "Failed to clear keyboard for chat=%s message=%s",
                 active_chat_id,
                 active_message_id,
             )
@@ -810,21 +823,6 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             return
 
         await callback.answer(_message_for_wrong_callback(current_state), show_alert=True)
-
-    @dispatcher.callback_query(F.data.startswith(f"{ACTION_HOME}:"))
-    async def home_handler(callback: CallbackQuery, state: FSMContext) -> None:
-        if not await _ensure_authorized(callback, deps.settings):
-            return
-        parsed = _parse_callback_data(callback.data)
-        data = await state.get_data()
-        if parsed is None:
-            await callback.answer("Эта кнопка не поддерживается.", show_alert=True)
-            return
-        if data.get(DATA_FLOW_SESSION_ID) != parsed.session_id:
-            await callback.answer("Это меню уже неактуально. Откройте его заново.", show_alert=True)
-            return
-        await _reset_to_menu(state, callback)
-        await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_CANCEL}:"))
     async def callback_cancel_handler(callback: CallbackQuery, state: FSMContext) -> None:
