@@ -9,7 +9,6 @@ This repository hosts a Telegram bot that manages MikroTik firewall address list
 - Keep secrets out of git. Never commit real Telegram tokens, MikroTik passwords, hostnames, usernames, or allowed user IDs.
 - All runtime configuration must come from environment variables.
 - Prefer small, focused modules over large files.
-- Cover core business logic with tests before extending integrations.
 - When touching Docker or GitHub workflows, preserve private-repo compatibility and GHCR publishing.
 
 ## Architecture Notes
@@ -21,6 +20,6 @@ This repository hosts a Telegram bot that manages MikroTik firewall address list
 
 ## Agent Expectations
 
-- Verify behavior with tests before claiming the task is complete.
+- Verify behavior with a real bot run or another direct manual check before claiming the task is complete.
 - If a command can delete MikroTik data, require an explicit confirmation step in the bot flow.
 - Keep user-facing messages short and explicit, especially for partial-success reports.

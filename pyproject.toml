@@ -14,12 +14,6 @@ dependencies = [
   "python-dotenv>=1.0.1,<2.0.0",
 ]
 
-[project.optional-dependencies]
-dev = [
-  "pytest>=8.3.0,<9.0.0",
-  "pytest-asyncio>=0.24.0,<1.0.0",
-]
-
 [project.scripts]
 tgbot-manage-addresslist = "tgbot_manage_addresslist.__main__:main"
 
@@ -28,7 +22,3 @@ package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
 where = ["src"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-asyncio_mode = "auto"

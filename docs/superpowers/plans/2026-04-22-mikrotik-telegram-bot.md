@@ -4,9 +4,9 @@
 
 **Goal:** Build a private Dockerized Telegram bot that manages MikroTik address-lists over SSH.
 
-**Architecture:** The bot uses `aiogram` FSM handlers for Telegram conversations, a small service layer for address-list operations, and an async SSH client for RouterOS command execution. Validation and RouterOS parsing stay in isolated modules so they can be tested without a live router.
+**Architecture:** The bot uses `aiogram` FSM handlers for Telegram conversations, a small service layer for address-list operations, and an async SSH client for RouterOS command execution. Validation and RouterOS parsing stay in isolated modules so they can be verified independently and exercised through manual bot runs.
 
-**Tech Stack:** Python 3.12, aiogram, asyncssh, pytest, Docker, GitHub Actions, GHCR
+**Tech Stack:** Python 3.12, aiogram, asyncssh, Docker, GitHub Actions, GHCR
 
 ---
 
@@ -14,34 +14,31 @@
 
 **Files:**
 - Create: `src/tgbot_manage_addresslist/validation/ip_lists.py`
-- Test: `tests/test_validation.py`
 
-- [ ] Write failing tests for extracting, validating, and deduplicating IP input.
-- [ ] Run the validation tests and confirm failure.
+- [ ] Implement extraction, validation, and deduplication for IP input.
+- [ ] Verify the parser manually from the bot flow with valid, duplicate, and invalid values.
 - [ ] Implement the validation module with minimal behavior.
-- [ ] Re-run validation tests and confirm pass.
+- [ ] Re-check the bot flow and confirm the parsed result matches expectations.
 
 ### Task 2: MikroTik parsing and command formatting
 
 **Files:**
 - Create: `src/tgbot_manage_addresslist/mikrotik/client.py`
-- Test: `tests/test_mikrotik_client.py`
 
-- [ ] Write failing tests for parsing `list=` values and escaping RouterOS strings.
-- [ ] Run the parser tests and confirm failure.
+- [ ] Implement parsing of `list=` values and escaping for RouterOS strings.
+- [ ] Verify the generated commands and parsed list names with representative RouterOS output samples.
 - [ ] Implement parsing and command-building helpers.
-- [ ] Re-run parser tests and confirm pass.
+- [ ] Re-run the same samples and confirm the output is stable.
 
 ### Task 3: Service layer
 
 **Files:**
 - Create: `src/tgbot_manage_addresslist/services/address_list_manager.py`
-- Test: `tests/test_address_list_manager.py`
 
-- [ ] Write failing tests for partial-success add behavior and delete behavior.
-- [ ] Run the service tests and confirm failure.
+- [ ] Implement partial-success add behavior and delete behavior.
+- [ ] Exercise add and delete flows manually with duplicate, invalid, and successful inputs.
 - [ ] Implement the service layer with structured result objects.
-- [ ] Re-run service tests and confirm pass.
+- [ ] Confirm the resulting Telegram messages match the expected summaries.
 
 ### Task 4: Telegram bot integration
 
@@ -68,5 +65,5 @@
 
 - [ ] Add Docker runtime files and GHCR workflow.
 - [ ] Document secret handling and container startup.
-- [ ] Verify tests and build succeed locally.
+- [ ] Verify the container build succeeds and the bot starts cleanly.
 - [ ] Initialize git, create a private GitHub repository, and push the project.

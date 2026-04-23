@@ -44,11 +44,17 @@ Create a separate MikroTik user for the bot and put that login/password into `.e
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[dev]
+pip install -e .
 cp .env.example .env
-pytest
 python -m tgbot_manage_addresslist
 ```
+
+## Manual Verification
+
+- start the bot and confirm the Telegram menu shows `/start`, `/delete_list`, `/cancel`, and `/help`
+- send `/start` and verify the bot asks for IP addresses
+- send one or more test IP addresses and confirm the bot offers existing address-lists
+- send `/delete_list` and confirm the bot asks for explicit deletion confirmation before removing a list
 
 ## Docker Run
 

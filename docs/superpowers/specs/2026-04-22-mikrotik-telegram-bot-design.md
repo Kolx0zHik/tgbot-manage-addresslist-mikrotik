@@ -56,7 +56,6 @@ Build a private Telegram bot that lets authorized users add IP addresses into Mi
 
 - `AGENTS.md`
 - Python package in `src/`
-- tests in `tests/`
 - Dockerfile and Compose file
 - GitHub Actions workflow for GHCR publishing
 - private GitHub repository bootstrap
