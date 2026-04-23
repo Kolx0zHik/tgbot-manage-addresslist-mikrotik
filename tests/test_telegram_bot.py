@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.storage.base import StorageKey
@@ -13,6 +15,7 @@ from tgbot_manage_addresslist.telegram_bot import (
     _build_mikrotik_actions_keyboard,
     _build_mikrotik_selection_keyboard,
     _mikrotik_is_available,
+    _show_connecting_to_mikrotik,
     _show_mikrotik_actions_menu,
     _show_mikrotik_selection_menu,
 )
@@ -109,10 +112,42 @@ async def test_show_mikrotik_actions_menu_persists_selected_router(
 
 
 @pytest.mark.asyncio
+async def test_show_connecting_to_mikrotik_renders_progress_message(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = MemoryStorage()
+    state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=1, user_id=1))
+    rendered: dict[str, object] = {}
+
+    async def fake_render_screen(state, event, text, reply_markup=None) -> None:
+        rendered["text"] = text
+
+    monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
+
+    await _show_connecting_to_mikrotik(object(), state, mikrotik_name="Office")
+
+    assert rendered["text"] == "Подключение к MikroTik Office..."
+
+
+@pytest.mark.asyncio
 async def test_mikrotik_is_available_returns_false_on_runtime_error() -> None:
     class StubService:
         async def fetch_address_lists(self, mikrotik_id: str) -> list[str]:
             raise RuntimeError("router down")
+
+    deps = type("Deps", (), {"address_list_service": StubService()})()
+
+    result = await _mikrotik_is_available(deps, "mt1")
+
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_mikrotik_is_available_returns_false_on_timeout() -> None:
+    class StubService:
+        async def fetch_address_lists(self, mikrotik_id: str) -> list[str]:
+            await asyncio.sleep(10)
+            return []
 
     deps = type("Deps", (), {"address_list_service": StubService()})()
 

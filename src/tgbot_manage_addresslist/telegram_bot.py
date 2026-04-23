@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 import logging
 import re
@@ -305,10 +306,22 @@ def _selected_mikrotik_from_data(data: dict[str, object]) -> tuple[str, str] | N
     return mikrotik_id, mikrotik_name
 
 
+async def _show_connecting_to_mikrotik(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    *,
+    mikrotik_name: str,
+) -> None:
+    await _render_screen(state, event, f"Подключение к MikroTik {mikrotik_name}...")
+
+
 async def _mikrotik_is_available(deps: BotDependencies, mikrotik_id: str) -> bool:
     try:
-        await deps.address_list_service.fetch_address_lists(mikrotik_id)
-    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        await asyncio.wait_for(
+            deps.address_list_service.fetch_address_lists(mikrotik_id),
+            timeout=5,
+        )
+    except (asyncio.TimeoutError, ConnectionError, OSError, TimeoutError, RuntimeError):
         logger.exception("Selected MikroTik %s is unavailable", mikrotik_id)
         return False
     return True
@@ -780,6 +793,11 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
             await callback.answer()
             return
+        await _show_connecting_to_mikrotik(
+            callback,
+            state,
+            mikrotik_name=mikrotik.name,
+        )
         if not await _mikrotik_is_available(deps, mikrotik.id):
             await _show_mikrotik_selection_menu(
                 callback,
