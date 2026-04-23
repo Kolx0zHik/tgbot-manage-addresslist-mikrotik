@@ -53,8 +53,8 @@ python -m tgbot_manage_addresslist
 
 ## Manual Verification
 
-- start the bot and confirm the Telegram menu shows `/start`, `/delete_list`, `/cancel`, and `/help`
-- send `/start` and verify the bot shows the inline main menu
+- start the bot and confirm the Telegram chat does not show a command menu button
+- send `/start` manually once and verify the bot shows the inline main menu
 - choose `Добавить IP`, send one or more test IP addresses, and confirm the bot offers existing address-lists plus `Создать новый address-list`
 - during add flow, send random text when the bot expects a button and verify it answers with a short explicit warning
 - during delete flow, press an old button from a previous screen and verify the bot reports that the menu is no longer актуально
@@ -70,7 +70,7 @@ docker compose logs -f tgbot_mikrotik
 
 The image name is already fixed in [compose.yaml](/opt/projects/bot_add_ip_mikrotik/compose.yaml), so nothing extra is needed in `.env` for Docker Compose.
 
-## Bot Commands
+## Supported Commands
 
 - `/start` - open the main menu
 - `/delete_list` - delete a full address-list after confirmation
