@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.session.aiohttp import AiohttpSession
+from aiogram.methods import GetMe, SetMyCommands
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.methods import SendMessage
 from aiogram.types import Chat, Message, Update, User
 
+from tgbot_manage_addresslist.app import setup_bot_commands
 from tgbot_manage_addresslist.settings import Settings
 from tgbot_manage_addresslist.telegram_bot import BotDependencies, register_handlers
 
@@ -104,3 +106,28 @@ async def test_ip_message_reports_mikrotik_connection_error(monkeypatch) -> None
 
     assert len(sent_methods) == 1
     assert sent_methods[0].text == "Не удалось подключиться к MikroTik. Проверьте SSH_HOST/PORT и доступность роутера."
+
+
+async def test_setup_bot_commands_registers_expected_menu(monkeypatch) -> None:
+    sent_methods: list[object] = []
+
+    async def fake_make_request(self, bot, method, timeout=None):  # type: ignore[no-untyped-def]
+        sent_methods.append(method)
+        if isinstance(method, GetMe):
+            return User(id=42, is_bot=True, first_name="TestBot", username="test_bot")
+        return True
+
+    monkeypatch.setattr(AiohttpSession, "make_request", fake_make_request)
+
+    bot = Bot("42:TEST")
+    await setup_bot_commands(bot)
+    await bot.session.close()
+
+    set_commands = [method for method in sent_methods if isinstance(method, SetMyCommands)]
+    assert len(set_commands) == 1
+    assert [(command.command, command.description) for command in set_commands[0].commands] == [
+        ("start", "Добавить IP"),
+        ("delete_list", "Удалить address-list"),
+        ("cancel", "Отменить сценарий"),
+        ("help", "Показать помощь"),
+    ]

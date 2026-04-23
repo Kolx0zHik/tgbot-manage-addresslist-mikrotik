@@ -5,6 +5,7 @@ import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.types import BotCommand
 
 from tgbot_manage_addresslist.logic import AddressListManager
 from tgbot_manage_addresslist.mikrotik import MikroTikSSHClient
@@ -23,6 +24,17 @@ def configure_logging(level_name: str) -> None:
     )
 
 
+async def setup_bot_commands(bot: Bot) -> None:
+    await bot.set_my_commands(
+        [
+            BotCommand(command="start", description="Добавить IP"),
+            BotCommand(command="delete_list", description="Удалить address-list"),
+            BotCommand(command="cancel", description="Отменить сценарий"),
+            BotCommand(command="help", description="Показать помощь"),
+        ]
+    )
+
+
 async def run() -> None:
     settings = Settings.from_env()
     configure_logging(settings.log_level)
@@ -31,6 +43,7 @@ async def run() -> None:
     manager = AddressListManager(MikroTikSSHClient(settings))
     deps = BotDependencies(settings=settings, address_list_manager=manager)
     register_handlers(dispatcher, deps)
+    await setup_bot_commands(bot)
 
     logger.info("Starting Telegram bot polling")
     try:
