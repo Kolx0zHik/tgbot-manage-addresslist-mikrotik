@@ -19,3 +19,4 @@ def test_settings_from_env_uses_password_auth(monkeypatch) -> None:
     assert settings.mikrotik_port == 22
     assert settings.mikrotik_username == "tg-bot"
     assert settings.mikrotik_password == "secret"
+    assert settings.log_level == "INFO"

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 import re
 from typing import Protocol
 
@@ -11,6 +12,7 @@ from tgbot_manage_addresslist.settings import Settings
 
 LIST_VALUE_RE = re.compile(r'(?:^|\s)list=(?:"((?:[^"\\]|\\.)*)"|(\S+))')
 ADDRESS_VALUE_RE = re.compile(r'(?:^|\s)address=(?:"((?:[^"\\]|\\.)*)"|(\S+))')
+logger = logging.getLogger(__name__)
 
 
 class MikroTikClientProtocol(Protocol):
@@ -73,14 +75,25 @@ class MikroTikSSHClient:
         self._settings = settings
 
     async def _run(self, command: str) -> CommandResult:
-        async with asyncssh.connect(
-            host=self._settings.mikrotik_host,
-            port=self._settings.mikrotik_port,
-            username=self._settings.mikrotik_username,
-            password=self._settings.mikrotik_password,
-            known_hosts=None,
-        ) as connection:
-            result = await connection.run(command, check=False)
+        logger.info(
+            "Connecting to MikroTik over SSH: host=%s port=%s user=%s",
+            self._settings.mikrotik_host,
+            self._settings.mikrotik_port,
+            self._settings.mikrotik_username,
+        )
+        try:
+            async with asyncssh.connect(
+                host=self._settings.mikrotik_host,
+                port=self._settings.mikrotik_port,
+                username=self._settings.mikrotik_username,
+                password=self._settings.mikrotik_password,
+                known_hosts=None,
+            ) as connection:
+                result = await connection.run(command, check=False)
+        except Exception:
+            logger.exception("MikroTik SSH command failed to run: %s", command)
+            raise
+        logger.info("MikroTik SSH command finished with exit status %s", result.exit_status)
         return CommandResult(
             stdout=result.stdout.strip(),
             stderr=result.stderr.strip(),

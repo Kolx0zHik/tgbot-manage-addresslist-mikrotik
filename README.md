@@ -33,6 +33,10 @@ Required variables:
 - `MIKROTIK_USERNAME`
 - `MIKROTIK_PASSWORD`
 
+Optional variables:
+
+- `LOG_LEVEL` - defaults to `INFO`
+
 Create a separate MikroTik user for the bot and put that login/password into `.env`. Do not use your main admin account for day-to-day bot work.
 
 ## Local Run
@@ -51,7 +55,7 @@ python -m tgbot_manage_addresslist
 ```bash
 cp .env.example .env
 docker compose up --build -d
-docker compose logs -f bot
+docker compose logs -f tgbot_mikrotik
 ```
 
 The image name is already fixed in [compose.yaml](/opt/projects/bot_add_ip_mikrotik/compose.yaml), so nothing extra is needed in `.env` for Docker Compose.

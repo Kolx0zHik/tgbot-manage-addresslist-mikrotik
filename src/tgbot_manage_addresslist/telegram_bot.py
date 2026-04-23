@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 from aiogram import Dispatcher, F
 from aiogram.filters import Command
@@ -16,6 +17,9 @@ from tgbot_manage_addresslist.logic import (
     parse_ip_input,
 )
 from tgbot_manage_addresslist.settings import Settings
+
+
+logger = logging.getLogger(__name__)
 
 
 class AddIpFlow(StatesGroup):
@@ -85,6 +89,33 @@ def _format_delete_result(result: DeleteOperationResult) -> str:
     return f"Address-list {result.list_name} удален.\nУдалено записей: {result.removed_count}"
 
 
+async def _process_ip_input(message: Message, state: FSMContext, deps: BotDependencies) -> bool:
+    if not message.text:
+        await message.answer("Нужен текст со списком IP адресов.")
+        return True
+
+    parsed = parse_ip_input(message.text)
+    if not parsed.valid_ips and not parsed.invalid_tokens:
+        return False
+    if not parsed.valid_ips:
+        await message.answer("В сообщении нет валидных IP адресов. Исправьте список и отправьте его еще раз.")
+        return True
+
+    logger.info("Received %s valid IPs from Telegram user %s", len(parsed.valid_ips), message.from_user.id if message.from_user else "unknown")
+    address_lists = await deps.address_list_manager.fetch_address_lists()
+    await state.update_data(
+        valid_ips=parsed.valid_ips,
+        invalid_tokens=parsed.invalid_tokens,
+        address_lists=address_lists,
+    )
+    await state.set_state(AddIpFlow.waiting_for_ip_input)
+    await message.answer(
+        "Выберите существующий address-list или создайте новый.",
+        reply_markup=build_address_list_keyboard(address_lists, "pick"),
+    )
+    return True
+
+
 def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
     @dispatcher.message(Command("help"))
     async def help_handler(message: Message, state: FSMContext) -> None:
@@ -116,28 +147,9 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
     async def ip_input_handler(message: Message, state: FSMContext) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
-        if not message.text:
-            await message.answer("Нужен текст со списком IP адресов.")
-            return
-
-        parsed = parse_ip_input(message.text)
-        if not parsed.valid_ips and not parsed.invalid_tokens:
+        if not await _process_ip_input(message, state, deps):
             await message.answer("Не удалось распознать ни одного IP адреса. Попробуйте еще раз.")
             return
-        if not parsed.valid_ips:
-            await message.answer("В сообщении нет валидных IP адресов. Исправьте список и отправьте его еще раз.")
-            return
-
-        address_lists = await deps.address_list_manager.fetch_address_lists()
-        await state.update_data(
-            valid_ips=parsed.valid_ips,
-            invalid_tokens=parsed.invalid_tokens,
-            address_lists=address_lists,
-        )
-        await message.answer(
-            "Выберите существующий address-list или создайте новый.",
-            reply_markup=build_address_list_keyboard(address_lists, "pick"),
-        )
 
     @dispatcher.callback_query(F.data == "pick:new")
     async def create_new_pick_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -231,3 +243,12 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         await state.clear()
         await callback.message.answer(_format_delete_result(result))
         await callback.answer()
+
+    @dispatcher.message()
+    async def fallback_message_handler(message: Message, state: FSMContext) -> None:
+        if not await _ensure_authorized(message, deps.settings):
+            return
+        handled = await _process_ip_input(message, state, deps)
+        if handled:
+            return
+        await message.answer("Отправьте /start или сразу пришлите список IP адресов.")

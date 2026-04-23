@@ -32,6 +32,7 @@ class Settings:
     mikrotik_port: int
     mikrotik_username: str
     mikrotik_password: str
+    log_level: str
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -43,4 +44,5 @@ class Settings:
             mikrotik_port=int(os.getenv("MIKROTIK_PORT", "22")),
             mikrotik_username=_require_env("MIKROTIK_USERNAME"),
             mikrotik_password=_require_env("MIKROTIK_PASSWORD"),
+            log_level=os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO",
         )
