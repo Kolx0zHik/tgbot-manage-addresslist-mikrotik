@@ -80,7 +80,6 @@ async def run() -> None:
     await setup_bot_commands(bot)
 
     logger.info("Starting Telegram bot polling")
-    await log_startup_health_checks(deps.address_list_service, settings.mikrotiks)
 
     try:
         await dispatcher.start_polling(bot)

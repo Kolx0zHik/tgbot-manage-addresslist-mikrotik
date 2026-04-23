@@ -4,6 +4,7 @@ import logging
 
 import pytest
 
+import tgbot_manage_addresslist.app as app_module
 from tgbot_manage_addresslist.app import build_dependencies, log_startup_health_checks
 from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 
@@ -57,6 +58,49 @@ def test_build_dependencies_creates_service_and_access_resolver() -> None:
 
     assert set(deps.address_list_service._managers_by_id) == {"mt1", "mt2"}
     assert deps.user_access_resolver.is_admin(100)
+
+
+@pytest.mark.asyncio
+async def test_run_does_not_block_on_startup_health_checks(monkeypatch: pytest.MonkeyPatch) -> None:
+    started = {"polling": False}
+
+    class StubBot:
+        def __init__(self, token: str) -> None:
+            self.token = token
+            self.session = type("Session", (), {"close": self._close})()
+
+        async def _close(self) -> None:
+            return None
+
+    class StubDispatcher:
+        def __init__(self, storage=None) -> None:
+            self.storage = storage
+
+        async def start_polling(self, bot) -> None:
+            started["polling"] = True
+
+    monkeypatch.setattr(app_module.Settings, "from_env", classmethod(lambda cls: make_settings()))
+    monkeypatch.setattr(app_module, "Bot", StubBot)
+    monkeypatch.setattr(app_module, "Dispatcher", StubDispatcher)
+    monkeypatch.setattr(app_module, "setup_bot_commands", lambda bot: _async_noop())
+    monkeypatch.setattr(app_module, "register_handlers", lambda dispatcher, deps: None)
+    monkeypatch.setattr(
+        app_module,
+        "log_startup_health_checks",
+        lambda service, mikrotiks: _raise_if_called(),
+    )
+
+    await app_module.run()
+
+    assert started["polling"] is True
+
+
+async def _async_noop() -> None:
+    return None
+
+
+async def _raise_if_called() -> None:
+    raise AssertionError("startup health checks should not block bot startup")
 
 
 @pytest.mark.asyncio
