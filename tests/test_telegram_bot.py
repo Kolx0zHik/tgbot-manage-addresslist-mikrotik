@@ -10,7 +10,9 @@ from tgbot_manage_addresslist.telegram_bot import (
     BotFlow,
     DATA_SELECTED_MIKROTIK_ID,
     DATA_SELECTED_MIKROTIK_NAME,
+    _build_mikrotik_actions_keyboard,
     _build_mikrotik_selection_keyboard,
+    _mikrotik_is_available,
     _show_mikrotik_actions_menu,
     _show_mikrotik_selection_menu,
 )
@@ -28,7 +30,19 @@ def test_build_mikrotik_selection_keyboard_contains_visible_routers() -> None:
         for button in row
     ]
 
-    assert button_texts == ["Office", "Warehouse", "Помощь"]
+    assert button_texts == ["Office", "Warehouse"]
+
+
+def test_build_mikrotik_actions_keyboard_does_not_contain_help() -> None:
+    keyboard = _build_mikrotik_actions_keyboard("deadbeef")
+
+    button_texts = [
+        button.text
+        for row in keyboard.inline_keyboard
+        for button in row
+    ]
+
+    assert button_texts == ["Добавить IP", "Удалить address-list", "Назад"]
 
 
 @pytest.mark.asyncio
@@ -92,3 +106,16 @@ async def test_show_mikrotik_actions_menu_persists_selected_router(
     assert await state.get_state() == BotFlow.mikrotik_actions.state
     assert data[DATA_SELECTED_MIKROTIK_ID] == "mt1"
     assert data[DATA_SELECTED_MIKROTIK_NAME] == "Office"
+
+
+@pytest.mark.asyncio
+async def test_mikrotik_is_available_returns_false_on_runtime_error() -> None:
+    class StubService:
+        async def fetch_address_lists(self, mikrotik_id: str) -> list[str]:
+            raise RuntimeError("router down")
+
+    deps = type("Deps", (), {"address_list_service": StubService()})()
+
+    result = await _mikrotik_is_available(deps, "mt1")
+
+    assert result is False

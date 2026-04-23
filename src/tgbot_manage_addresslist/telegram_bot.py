@@ -34,7 +34,6 @@ ACTION_SELECT_MIKROTIK = "mselect"
 ACTION_ROUTER_ADD = "radd"
 ACTION_ROUTER_DELETE = "rdel"
 ACTION_ROUTER_BACK = "rback"
-ACTION_HELP = "help"
 ACTION_CANCEL = "cancel"
 ACTION_BACK = "back"
 ACTION_ADD_EXISTING = "alist"
@@ -112,7 +111,6 @@ def _build_mikrotik_selection_keyboard(
             text=mikrotik_name,
             callback_data=_encode_callback_data(ACTION_SELECT_MIKROTIK, session_id, mikrotik_id),
         )
-    builder.button(text="Помощь", callback_data=_encode_callback_data(ACTION_HELP, session_id))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -125,7 +123,6 @@ def _build_mikrotik_actions_keyboard(session_id: str) -> InlineKeyboardMarkup:
         callback_data=_encode_callback_data(ACTION_ROUTER_DELETE, session_id),
     )
     builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_ROUTER_BACK, session_id))
-    builder.button(text="Помощь", callback_data=_encode_callback_data(ACTION_HELP, session_id))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -306,6 +303,15 @@ def _selected_mikrotik_from_data(data: dict[str, object]) -> tuple[str, str] | N
     if not isinstance(mikrotik_name, str) or not mikrotik_name:
         return None
     return mikrotik_id, mikrotik_name
+
+
+async def _mikrotik_is_available(deps: BotDependencies, mikrotik_id: str) -> bool:
+    try:
+        await deps.address_list_service.fetch_address_lists(mikrotik_id)
+    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        logger.exception("Selected MikroTik %s is unavailable", mikrotik_id)
+        return False
+    return True
 
 
 async def _show_mikrotik_selection_menu(
@@ -774,6 +780,15 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
             await callback.answer()
             return
+        if not await _mikrotik_is_available(deps, mikrotik.id):
+            await _show_mikrotik_selection_menu(
+                callback,
+                state,
+                deps,
+                notice=f"MikroTik {mikrotik.name} недоступен.",
+            )
+            await callback.answer()
+            return
         await _show_mikrotik_actions_menu(
             callback,
             state,
@@ -823,39 +838,6 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             return
         await _reset_to_menu(state, callback, deps)
         await callback.answer()
-
-    @dispatcher.callback_query(F.data.startswith(f"{ACTION_HELP}:"))
-    async def menu_help_handler(callback: CallbackQuery, state: FSMContext) -> None:
-        if not await _ensure_authorized(callback, deps.settings):
-            return
-        parsed = _parse_callback_data(callback.data)
-        current_state = await state.get_state()
-        data = await state.get_data()
-        if parsed is None or parsed.action != ACTION_HELP:
-            await callback.answer("Эта кнопка не поддерживается.", show_alert=True)
-            return
-        if data.get(DATA_FLOW_SESSION_ID) != parsed.session_id:
-            await callback.answer("Это меню уже неактуально. Откройте его заново.", show_alert=True)
-            return
-        if current_state == BotFlow.mikrotik_selection.state:
-            await _show_mikrotik_selection_menu(callback, state, deps, notice=_help_text())
-            await callback.answer()
-            return
-        if current_state == BotFlow.mikrotik_actions.state:
-            selected = _selected_mikrotik_from_data(data)
-            if selected is None:
-                await _reset_to_menu(state, callback, deps, _help_text())
-            else:
-                await _show_mikrotik_actions_menu(
-                    callback,
-                    state,
-                    mikrotik_id=selected[0],
-                    mikrotik_name=selected[1],
-                    notice=_help_text(),
-                )
-            await callback.answer()
-            return
-        await callback.answer(_message_for_wrong_callback(current_state), show_alert=True)
 
     @dispatcher.message(BotFlow.add_waiting_ip_input)
     async def add_ip_input_handler(message: Message, state: FSMContext) -> None:
