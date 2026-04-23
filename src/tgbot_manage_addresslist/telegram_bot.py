@@ -347,6 +347,8 @@ async def _show_add_ip_prompt(
             DATA_FLOW_SESSION_ID: session_id,
             DATA_SELECTED_LIST: list_name,
             DATA_SELECTED_SOURCE: selected_source,
+            DATA_VALID_IPS: valid_ips,
+            DATA_INVALID_TOKENS: invalid_tokens,
         }
     )
     text = f"Отправьте IP-адреса или подсети для address-list {list_name}."
@@ -372,6 +374,8 @@ async def _show_add_confirmation(
             DATA_FLOW_SESSION_ID: session_id,
             DATA_SELECTED_LIST: list_name,
             DATA_SELECTED_SOURCE: selected_source,
+            DATA_VALID_IPS: valid_ips,
+            DATA_INVALID_TOKENS: invalid_tokens,
         }
     )
     invalid_note = ""
