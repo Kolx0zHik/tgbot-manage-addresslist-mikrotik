@@ -53,8 +53,8 @@ python -m tgbot_manage_addresslist
 
 ## Manual Verification
 
-- start the bot and confirm the Telegram chat does not show a command menu button
-- send `/start` manually once and verify the bot shows the inline main menu
+- start the bot and confirm the Telegram menu button contains only `/start`
+- send `/start` and verify the bot resets any active scenario and shows the inline main menu
 - choose `Добавить IP`, send one or more test IP addresses, and confirm the bot offers existing address-lists plus `Создать новый address-list`
 - during add flow, send random text when the bot expects a button and verify it answers with a short explicit warning
 - during delete flow, press an old button from a previous screen and verify the bot reports that the menu is no longer актуально
