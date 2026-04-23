@@ -5,6 +5,7 @@ import logging
 import secrets
 
 from aiogram import Dispatcher, F
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
@@ -45,6 +46,8 @@ DATA_VALID_IPS = "valid_ips"
 DATA_INVALID_TOKENS = "invalid_tokens"
 DATA_SELECTED_LIST = "selected_list_name"
 DATA_SELECTED_SOURCE = "selected_list_source"
+DATA_ACTIVE_CHAT_ID = "active_chat_id"
+DATA_ACTIVE_MESSAGE_ID = "active_message_id"
 
 
 class BotFlow(StatesGroup):
@@ -100,13 +103,10 @@ def _build_main_menu_keyboard(session_id: str) -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
-def _build_text_step_keyboard(session_id: str, include_back: bool = False) -> InlineKeyboardMarkup:
+def _build_cancel_keyboard(session_id: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    if include_back:
-        builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
-    builder.button(text="В меню", callback_data=_encode_callback_data(ACTION_HOME, session_id))
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
-    builder.adjust(1 if include_back else 2)
+    builder.adjust(1)
     return builder.as_markup()
 
 
@@ -118,8 +118,6 @@ def _build_add_list_keyboard(address_lists: list[str], session_id: str) -> Inlin
             callback_data=_encode_callback_data(ACTION_ADD_EXISTING, session_id, index),
         )
     builder.button(text="Создать новый address-list", callback_data=_encode_callback_data(ACTION_ADD_NEW, session_id))
-    builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
-    builder.button(text="В меню", callback_data=_encode_callback_data(ACTION_HOME, session_id))
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
     builder.adjust(1)
     return builder.as_markup()
@@ -132,7 +130,6 @@ def _build_delete_list_keyboard(address_lists: list[str], session_id: str) -> In
             text=list_name,
             callback_data=_encode_callback_data(ACTION_DELETE_PICK, session_id, index),
         )
-    builder.button(text="В меню", callback_data=_encode_callback_data(ACTION_HOME, session_id))
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
     builder.adjust(1)
     return builder.as_markup()
@@ -142,9 +139,8 @@ def _build_confirmation_keyboard(session_id: str, confirm_action: str) -> Inline
     builder = InlineKeyboardBuilder()
     builder.button(text="Подтвердить", callback_data=_encode_callback_data(confirm_action, session_id))
     builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
-    builder.button(text="В меню", callback_data=_encode_callback_data(ACTION_HOME, session_id))
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
-    builder.adjust(2, 2)
+    builder.adjust(2, 1)
     return builder.as_markup()
 
 
@@ -199,6 +195,50 @@ def _message_target(event: Message | CallbackQuery) -> Message:
     return event.message
 
 
+async def _render_screen(
+    state: FSMContext,
+    event: Message | CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+) -> None:
+    data = await state.get_data()
+    active_chat_id = data.get(DATA_ACTIVE_CHAT_ID)
+    active_message_id = data.get(DATA_ACTIVE_MESSAGE_ID)
+
+    target = _message_target(event)
+    bot = target.bot
+
+    if isinstance(event, CallbackQuery) and event.message is not None:
+        active_chat_id = event.message.chat.id
+        active_message_id = event.message.message_id
+
+    if active_chat_id is not None and active_message_id is not None:
+        try:
+            await bot.edit_message_text(
+                chat_id=active_chat_id,
+                message_id=active_message_id,
+                text=text,
+                reply_markup=reply_markup,
+            )
+            await state.update_data(
+                **{
+                    DATA_ACTIVE_CHAT_ID: active_chat_id,
+                    DATA_ACTIVE_MESSAGE_ID: active_message_id,
+                }
+            )
+            return
+        except TelegramBadRequest:
+            logger.info("Falling back to sending a fresh message for chat=%s message=%s", active_chat_id, active_message_id)
+
+    sent_message = await target.answer(text, reply_markup=reply_markup)
+    await state.update_data(
+        **{
+            DATA_ACTIVE_CHAT_ID: sent_message.chat.id,
+            DATA_ACTIVE_MESSAGE_ID: sent_message.message_id,
+        }
+    )
+
+
 async def _reset_to_menu(state: FSMContext, event: Message | CallbackQuery, notice: str | None = None) -> None:
     session_id = _new_session_id()
     await state.clear()
@@ -209,10 +249,10 @@ async def _reset_to_menu(state: FSMContext, event: Message | CallbackQuery, noti
             DATA_FLOW_SESSION_ID: session_id,
         }
     )
-    target = _message_target(event)
+    text = "Главное меню. Выберите действие."
     if notice:
-        await target.answer(notice)
-    await target.answer("Главное меню. Выберите действие.", reply_markup=_build_main_menu_keyboard(session_id))
+        text = f"{notice}\n\n{text}"
+    await _render_screen(state, event, text, _build_main_menu_keyboard(session_id))
 
 
 async def _reply_mikrotik_error(event: Message | CallbackQuery, state: FSMContext) -> None:
@@ -233,9 +273,11 @@ async def _start_add_flow(event: Message | CallbackQuery, state: FSMContext) -> 
             DATA_FLOW_SESSION_ID: session_id,
         }
     )
-    await _message_target(event).answer(
+    await _render_screen(
+        state,
+        event,
         "Отправьте список IP-адресов.",
-        reply_markup=_build_text_step_keyboard(session_id),
+        _build_cancel_keyboard(session_id),
     )
 
 
@@ -259,13 +301,10 @@ async def _show_add_list_choice(
             DATA_INVALID_TOKENS: invalid_tokens,
         }
     )
-    target = _message_target(event)
+    text = "Выберите существующий address-list или создайте новый."
     if notice:
-        await target.answer(notice)
-    await target.answer(
-        "Выберите существующий address-list или создайте новый.",
-        reply_markup=_build_add_list_keyboard(address_lists, session_id),
-    )
+        text = f"{notice}\n\n{text}"
+    await _render_screen(state, event, text, _build_add_list_keyboard(address_lists, session_id))
 
 
 async def _show_new_list_name_prompt(
@@ -282,13 +321,10 @@ async def _show_new_list_name_prompt(
             DATA_FLOW_SESSION_ID: session_id,
         }
     )
-    target = _message_target(event)
+    text = "Отправьте имя нового address-list."
     if notice:
-        await target.answer(notice)
-    await target.answer(
-        "Отправьте имя нового address-list.",
-        reply_markup=_build_text_step_keyboard(session_id, include_back=True),
-    )
+        text = f"{notice}\n\n{text}"
+    await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
 
 
 async def _show_add_confirmation(
@@ -313,9 +349,11 @@ async def _show_add_confirmation(
     invalid_note = ""
     if invalid_tokens:
         invalid_note = f"\nНевалидных значений будет пропущено: {len(invalid_tokens)}"
-    await _message_target(event).answer(
+    await _render_screen(
+        state,
+        event,
         f"Подтвердите добавление {len(valid_ips)} IP в address-list {list_name}.{invalid_note}",
-        reply_markup=_build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM),
+        _build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM),
     )
 
 
@@ -341,9 +379,11 @@ async def _start_delete_flow(event: Message | CallbackQuery, state: FSMContext, 
             DATA_ADDRESS_LISTS: address_lists,
         }
     )
-    await _message_target(event).answer(
+    await _render_screen(
+        state,
+        event,
         "Выберите address-list для полного удаления.",
-        reply_markup=_build_delete_list_keyboard(address_lists, session_id),
+        _build_delete_list_keyboard(address_lists, session_id),
     )
 
 
@@ -357,9 +397,11 @@ async def _show_delete_confirmation(event: Message | CallbackQuery, state: FSMCo
             DATA_SELECTED_LIST: list_name,
         }
     )
-    await _message_target(event).answer(
+    await _render_screen(
+        state,
+        event,
         f"Подтвердите удаление address-list {list_name}. Это удалит все IP-адреса внутри него.",
-        reply_markup=_build_confirmation_keyboard(session_id, ACTION_DELETE_CONFIRM),
+        _build_confirmation_keyboard(session_id, ACTION_DELETE_CONFIRM),
     )
 
 
@@ -756,9 +798,11 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
                     DATA_ADDRESS_LISTS: address_lists,
                 }
             )
-            await _message_target(callback).answer(
+            await _render_screen(
+                state,
+                callback,
                 "Выберите address-list для полного удаления.",
-                reply_markup=_build_delete_list_keyboard(address_lists, session_id),
+                _build_delete_list_keyboard(address_lists, session_id),
             )
             await callback.answer()
             return
