@@ -15,11 +15,12 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from tgbot_manage_addresslist.logic import (
     AddOperationResult,
-    AddressListManager,
+    AddressListService,
     DeleteOperationResult,
+    UserAccessResolver,
     parse_ip_input,
 )
-from tgbot_manage_addresslist.settings import Settings
+from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 
 
 logger = logging.getLogger(__name__)
@@ -29,8 +30,10 @@ FLOW_MENU = "menu"
 FLOW_ADD = "add"
 FLOW_DELETE = "delete"
 
-ACTION_ADD = "add"
-ACTION_DELETE = "del"
+ACTION_SELECT_MIKROTIK = "mselect"
+ACTION_ROUTER_ADD = "radd"
+ACTION_ROUTER_DELETE = "rdel"
+ACTION_ROUTER_BACK = "rback"
 ACTION_HELP = "help"
 ACTION_CANCEL = "cancel"
 ACTION_BACK = "back"
@@ -47,15 +50,18 @@ DATA_VALID_IPS = "valid_ips"
 DATA_INVALID_TOKENS = "invalid_tokens"
 DATA_SELECTED_LIST = "selected_list_name"
 DATA_SELECTED_SOURCE = "selected_list_source"
+DATA_SELECTED_MIKROTIK_ID = "selected_mikrotik_id"
+DATA_SELECTED_MIKROTIK_NAME = "selected_mikrotik_name"
 DATA_ACTIVE_CHAT_ID = "active_chat_id"
 DATA_ACTIVE_MESSAGE_ID = "active_message_id"
 
 
 class BotFlow(StatesGroup):
-    menu = State()
-    add_waiting_ip_input = State()
+    mikrotik_selection = State()
+    mikrotik_actions = State()
     add_waiting_list_choice = State()
     add_waiting_new_list_name = State()
+    add_waiting_ip_input = State()
     add_waiting_confirmation = State()
     delete_waiting_list_choice = State()
     delete_waiting_confirmation = State()
@@ -64,7 +70,8 @@ class BotFlow(StatesGroup):
 @dataclass(frozen=True, slots=True)
 class BotDependencies:
     settings: Settings
-    address_list_manager: AddressListManager
+    address_list_service: AddressListService
+    user_access_resolver: UserAccessResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,10 +102,29 @@ def _parse_callback_data(raw_data: str | None) -> ParsedCallbackData | None:
     return ParsedCallbackData(action=parts[0], session_id=parts[1], payload=payload)
 
 
-def _build_main_menu_keyboard(session_id: str) -> InlineKeyboardMarkup:
+def _build_mikrotik_selection_keyboard(
+    mikrotiks: list[tuple[str, str]],
+    session_id: str,
+) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
-    builder.button(text="Добавить IP", callback_data=_encode_callback_data(ACTION_ADD, session_id))
-    builder.button(text="Удалить address-list", callback_data=_encode_callback_data(ACTION_DELETE, session_id))
+    for mikrotik_id, mikrotik_name in mikrotiks:
+        builder.button(
+            text=mikrotik_name,
+            callback_data=_encode_callback_data(ACTION_SELECT_MIKROTIK, session_id, mikrotik_id),
+        )
+    builder.button(text="Помощь", callback_data=_encode_callback_data(ACTION_HELP, session_id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _build_mikrotik_actions_keyboard(session_id: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Добавить IP", callback_data=_encode_callback_data(ACTION_ROUTER_ADD, session_id))
+    builder.button(
+        text="Удалить address-list",
+        callback_data=_encode_callback_data(ACTION_ROUTER_DELETE, session_id),
+    )
+    builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_ROUTER_BACK, session_id))
     builder.button(text="Помощь", callback_data=_encode_callback_data(ACTION_HELP, session_id))
     builder.adjust(1)
     return builder.as_markup()
@@ -148,8 +174,8 @@ def _build_confirmation_keyboard(session_id: str, confirm_action: str) -> Inline
 def _help_text() -> str:
     return (
         "Бот работает через inline-кнопки.\n"
-        "/start - открыть главное меню\n"
-        "/delete_list - сразу открыть удаление address-list\n"
+        "/start - выбрать MikroTik\n"
+        "/delete_list - удалить address-list на выбранном MikroTik\n"
         "/cancel - отменить текущий сценарий\n"
         "Текстом отправляются только IP-адреса и имя нового address-list."
     )
@@ -159,8 +185,9 @@ def _contains_cyrillic(value: str) -> bool:
     return CYRILLIC_RE.search(value) is not None
 
 
-def _format_add_result(result: AddOperationResult) -> str:
+def _format_add_result(result: AddOperationResult, mikrotik_name: str) -> str:
     lines = [
+        f"MikroTik: {mikrotik_name}",
         f"Address-list: {result.list_name}",
         f"Добавлено: {len(result.added)}",
         f"Дубликаты: {len(result.duplicates)}",
@@ -178,8 +205,12 @@ def _format_add_result(result: AddOperationResult) -> str:
     return "\n".join(lines)
 
 
-def _format_delete_result(result: DeleteOperationResult) -> str:
-    return f"Address-list {result.list_name} удален.\nУдалено записей: {result.removed_count}"
+def _format_delete_result(result: DeleteOperationResult, mikrotik_name: str) -> str:
+    return (
+        f"MikroTik: {mikrotik_name}\n"
+        f"Address-list {result.list_name} удален.\n"
+        f"Удалено записей: {result.removed_count}"
+    )
 
 
 async def _ensure_authorized(event: Message | CallbackQuery, settings: Settings) -> bool:
@@ -260,45 +291,156 @@ async def _render_screen(
     )
 
 
-async def _reset_to_menu(state: FSMContext, event: Message | CallbackQuery, notice: str | None = None) -> None:
+def _visible_mikrotik_choices(user_id: int, deps: BotDependencies) -> list[tuple[str, str]]:
+    return [
+        (mikrotik.id, mikrotik.name)
+        for mikrotik in deps.user_access_resolver.visible_mikrotiks_for(user_id)
+    ]
+
+
+def _selected_mikrotik_from_data(data: dict[str, object]) -> tuple[str, str] | None:
+    mikrotik_id = data.get(DATA_SELECTED_MIKROTIK_ID)
+    mikrotik_name = data.get(DATA_SELECTED_MIKROTIK_NAME)
+    if not isinstance(mikrotik_id, str) or not mikrotik_id:
+        return None
+    if not isinstance(mikrotik_name, str) or not mikrotik_name:
+        return None
+    return mikrotik_id, mikrotik_name
+
+
+async def _show_mikrotik_selection_menu(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    deps: BotDependencies,
+    *,
+    notice: str | None = None,
+) -> None:
+    user = event.from_user
+    if user is None:
+        return
+
+    visible_mikrotiks = _visible_mikrotik_choices(user.id, deps)
+    if not visible_mikrotiks:
+        logger.warning("Allowed Telegram user %s has no assigned MikroTik routers", user.id)
+        await state.clear()
+        await _render_screen(
+            state,
+            event,
+            "Для вашего пользователя не назначен ни один MikroTik.",
+        )
+        return
+
     session_id = _new_session_id()
+    active_data = await state.get_data()
     await state.clear()
-    await state.set_state(BotFlow.menu)
+    await state.set_state(BotFlow.mikrotik_selection)
     await state.update_data(
         **{
             DATA_FLOW_TYPE: FLOW_MENU,
             DATA_FLOW_SESSION_ID: session_id,
+            DATA_ACTIVE_CHAT_ID: active_data.get(DATA_ACTIVE_CHAT_ID),
+            DATA_ACTIVE_MESSAGE_ID: active_data.get(DATA_ACTIVE_MESSAGE_ID),
         }
     )
-    text = "Главное меню. Выберите действие."
+    text = "Выберите MikroTik."
     if notice:
         text = f"{notice}\n\n{text}"
-    await _render_screen(state, event, text, _build_main_menu_keyboard(session_id))
-
-
-async def _reply_mikrotik_error(event: Message | CallbackQuery, state: FSMContext) -> None:
-    await _reset_to_menu(
+    await _render_screen(
         state,
         event,
-        "Не удалось подключиться к MikroTik. Проверьте SSH_HOST/PORT и доступность роутера.",
+        text,
+        _build_mikrotik_selection_keyboard(visible_mikrotiks, session_id),
+    )
+
+
+async def _show_mikrotik_actions_menu(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    *,
+    mikrotik_id: str,
+    mikrotik_name: str,
+    notice: str | None = None,
+) -> None:
+    session_id = _new_session_id()
+    await state.set_state(BotFlow.mikrotik_actions)
+    await state.update_data(
+        **{
+            DATA_FLOW_TYPE: FLOW_MENU,
+            DATA_FLOW_SESSION_ID: session_id,
+            DATA_SELECTED_MIKROTIK_ID: mikrotik_id,
+            DATA_SELECTED_MIKROTIK_NAME: mikrotik_name,
+        }
+    )
+    text = f"Выбран MikroTik: {mikrotik_name}\nВыберите действие."
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await _render_screen(state, event, text, _build_mikrotik_actions_keyboard(session_id))
+
+
+async def _reset_to_menu(
+    state: FSMContext,
+    event: Message | CallbackQuery,
+    deps: BotDependencies,
+    notice: str | None = None,
+) -> None:
+    await _show_mikrotik_selection_menu(event, state, deps, notice=notice)
+
+
+async def _reply_mikrotik_error(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    deps: BotDependencies,
+) -> None:
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        await _reset_to_menu(
+            state,
+            event,
+            deps,
+            "Не удалось подключиться к MikroTik. Проверьте доступность роутера.",
+        )
+        return
+
+    mikrotik_id, mikrotik_name = selected
+    await _show_mikrotik_actions_menu(
+        event,
+        state,
+        mikrotik_id=mikrotik_id,
+        mikrotik_name=mikrotik_name,
+        notice=f"Не удалось подключиться к MikroTik {mikrotik_name}.",
     )
 
 
 async def _start_add_flow(event: Message | CallbackQuery, state: FSMContext, deps: BotDependencies) -> None:
-    await state.clear()
-    try:
-        address_lists = await deps.address_list_manager.fetch_address_lists()
-    except (ConnectionError, OSError, TimeoutError, RuntimeError):
-        logger.exception("Failed to fetch address-lists for add flow")
-        await _reply_mikrotik_error(event, state)
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        await _reset_to_menu(state, event, deps, "Сначала выберите MikroTik.")
         return
-    await _show_add_list_choice(event, state, address_lists=address_lists)
+
+    mikrotik_id, mikrotik_name = selected
+    try:
+        address_lists = await deps.address_list_service.fetch_address_lists(mikrotik_id)
+    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        logger.exception("Failed to fetch address-lists for add flow on MikroTik %s", mikrotik_id)
+        await _reply_mikrotik_error(event, state, deps)
+        return
+    await _show_add_list_choice(
+        event,
+        state,
+        mikrotik_id=mikrotik_id,
+        mikrotik_name=mikrotik_name,
+        address_lists=address_lists,
+    )
 
 
 async def _show_add_list_choice(
     event: Message | CallbackQuery,
     state: FSMContext,
     *,
+    mikrotik_id: str,
+    mikrotik_name: str,
     address_lists: list[str],
     notice: str | None = None,
 ) -> None:
@@ -308,10 +450,12 @@ async def _show_add_list_choice(
         **{
             DATA_FLOW_TYPE: FLOW_ADD,
             DATA_FLOW_SESSION_ID: session_id,
+            DATA_SELECTED_MIKROTIK_ID: mikrotik_id,
+            DATA_SELECTED_MIKROTIK_NAME: mikrotik_name,
             DATA_ADDRESS_LISTS: address_lists,
         }
     )
-    text = "Выберите существующий address-list или создайте новый."
+    text = f"MikroTik: {mikrotik_name}\nВыберите существующий address-list или создайте новый."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_add_list_keyboard(address_lists, session_id))
@@ -324,6 +468,11 @@ async def _show_new_list_name_prompt(
     notice: str | None = None,
 ) -> None:
     session_id = _new_session_id()
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        raise RuntimeError("Selected MikroTik is required before creating a new address-list")
+    _, mikrotik_name = selected
     await state.set_state(BotFlow.add_waiting_new_list_name)
     await state.update_data(
         **{
@@ -331,7 +480,7 @@ async def _show_new_list_name_prompt(
             DATA_FLOW_SESSION_ID: session_id,
         }
     )
-    text = "Отправьте имя нового address-list."
+    text = f"MikroTik: {mikrotik_name}\nОтправьте имя нового address-list."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
@@ -346,6 +495,11 @@ async def _show_add_ip_prompt(
     notice: str | None = None,
 ) -> None:
     session_id = _new_session_id()
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        raise RuntimeError("Selected MikroTik is required before adding IPs")
+    _, mikrotik_name = selected
     await state.set_state(BotFlow.add_waiting_ip_input)
     await state.update_data(
         **{
@@ -357,7 +511,7 @@ async def _show_add_ip_prompt(
             DATA_INVALID_TOKENS: [],
         }
     )
-    text = f"Отправьте IP-адреса или подсети для address-list {list_name}."
+    text = f"MikroTik: {mikrotik_name}\nОтправьте IP-адреса или подсети для address-list {list_name}."
     if notice:
         text = f"{notice}\n\n{text}"
     await _render_screen(state, event, text, _build_cancel_keyboard(session_id))
@@ -373,6 +527,11 @@ async def _show_add_confirmation(
     invalid_tokens: list[str],
 ) -> None:
     session_id = _new_session_id()
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        raise RuntimeError("Selected MikroTik is required before add confirmation")
+    _, mikrotik_name = selected
     await state.set_state(BotFlow.add_waiting_confirmation)
     await state.update_data(
         **{
@@ -390,43 +549,65 @@ async def _show_add_confirmation(
     await _render_screen(
         state,
         event,
-        f"Подтвердите добавление {len(valid_ips)} IP в address-list {list_name}.{invalid_note}",
+        (
+            f"MikroTik: {mikrotik_name}\n"
+            f"Подтвердите добавление {len(valid_ips)} IP в address-list {list_name}.{invalid_note}"
+        ),
         _build_confirmation_keyboard(session_id, ACTION_ADD_CONFIRM),
     )
 
 
 async def _start_delete_flow(event: Message | CallbackQuery, state: FSMContext, deps: BotDependencies) -> None:
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        await _reset_to_menu(state, event, deps, "Сначала выберите MikroTik.")
+        return
+
+    mikrotik_id, mikrotik_name = selected
     try:
-        address_lists = await deps.address_list_manager.fetch_address_lists()
+        address_lists = await deps.address_list_service.fetch_address_lists(mikrotik_id)
     except (ConnectionError, OSError, TimeoutError, RuntimeError):
-        logger.exception("Failed to fetch address-lists for delete flow")
-        await _reply_mikrotik_error(event, state)
+        logger.exception("Failed to fetch address-lists for delete flow on MikroTik %s", mikrotik_id)
+        await _reply_mikrotik_error(event, state, deps)
         return
 
     if not address_lists:
-        await _reset_to_menu(state, event, "На MikroTik не найдено ни одного address-list.")
+        await _show_mikrotik_actions_menu(
+            event,
+            state,
+            mikrotik_id=mikrotik_id,
+            mikrotik_name=mikrotik_name,
+            notice=f"На MikroTik {mikrotik_name} не найдено ни одного address-list.",
+        )
         return
 
     session_id = _new_session_id()
-    await state.clear()
     await state.set_state(BotFlow.delete_waiting_list_choice)
     await state.update_data(
         **{
             DATA_FLOW_TYPE: FLOW_DELETE,
             DATA_FLOW_SESSION_ID: session_id,
+            DATA_SELECTED_MIKROTIK_ID: mikrotik_id,
+            DATA_SELECTED_MIKROTIK_NAME: mikrotik_name,
             DATA_ADDRESS_LISTS: address_lists,
         }
     )
     await _render_screen(
         state,
         event,
-        "Выберите address-list для полного удаления.",
+        f"MikroTik: {mikrotik_name}\nВыберите address-list для полного удаления.",
         _build_delete_list_keyboard(address_lists, session_id),
     )
 
 
 async def _show_delete_confirmation(event: Message | CallbackQuery, state: FSMContext, *, list_name: str) -> None:
     session_id = _new_session_id()
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        raise RuntimeError("Selected MikroTik is required before delete confirmation")
+    _, mikrotik_name = selected
     await state.set_state(BotFlow.delete_waiting_confirmation)
     await state.update_data(
         **{
@@ -438,14 +619,19 @@ async def _show_delete_confirmation(event: Message | CallbackQuery, state: FSMCo
     await _render_screen(
         state,
         event,
-        f"Подтвердите удаление address-list {list_name}. Это удалит все IP-адреса внутри него.",
+        (
+            f"MikroTik: {mikrotik_name}\n"
+            f"Подтвердите удаление address-list {list_name}. Это удалит все IP-адреса внутри него."
+        ),
         _build_confirmation_keyboard(session_id, ACTION_DELETE_CONFIRM),
     )
 
 
 def _message_for_wrong_text(current_state: str | None) -> str:
-    if current_state == BotFlow.menu.state:
-        return "Сейчас используйте кнопки меню."
+    if current_state == BotFlow.mikrotik_selection.state:
+        return "Сейчас выберите MikroTik кнопкой."
+    if current_state == BotFlow.mikrotik_actions.state:
+        return "Сейчас используйте кнопки меню MikroTik."
     if current_state == BotFlow.add_waiting_list_choice.state:
         return "Сейчас выберите address-list кнопкой."
     if current_state == BotFlow.add_waiting_confirmation.state:
@@ -458,6 +644,10 @@ def _message_for_wrong_text(current_state: str | None) -> str:
 
 
 def _message_for_wrong_callback(current_state: str | None) -> str:
+    if current_state == BotFlow.mikrotik_selection.state:
+        return "Сейчас можно выбрать MikroTik только из текущего меню."
+    if current_state == BotFlow.mikrotik_actions.state:
+        return "Сейчас используйте актуальные кнопки выбранного MikroTik."
     if current_state == BotFlow.add_waiting_ip_input.state:
         return "Сейчас бот ждет список IP-адресов."
     if current_state == BotFlow.add_waiting_new_list_name.state:
@@ -470,8 +660,6 @@ def _message_for_wrong_callback(current_state: str | None) -> str:
         return "Сейчас можно выбрать address-list для удаления только из текущего меню."
     if current_state == BotFlow.delete_waiting_confirmation.state:
         return "Сейчас можно только подтвердить или отменить удаление."
-    if current_state == BotFlow.menu.state:
-        return "Используйте актуальные кнопки главного меню."
     return "Эта кнопка больше неактуальна. Откройте меню заново."
 
 
@@ -500,7 +688,7 @@ async def _validate_callback(
     return parsed, data
 
 
-async def _handle_add_ip_input(message: Message, state: FSMContext, deps: BotDependencies) -> None:
+async def _handle_add_ip_input(message: Message, state: FSMContext) -> None:
     if not message.text:
         await message.answer("Нужен текст со списком IP-адресов.")
         return
@@ -518,12 +706,12 @@ async def _handle_add_ip_input(message: Message, state: FSMContext, deps: BotDep
         len(parsed.valid_ips),
         message.from_user.id if message.from_user else "unknown",
     )
+
     data = await state.get_data()
     list_name = data.get(DATA_SELECTED_LIST)
     selected_source = data.get(DATA_SELECTED_SOURCE)
     if not isinstance(list_name, str) or not list_name or not isinstance(selected_source, str):
-        await _reset_to_menu(state, message, "Сценарий добавления потерян. Начните заново.")
-        return
+        raise RuntimeError("Add flow state is missing selected list data")
 
     await _show_add_confirmation(
         message,
@@ -540,19 +728,19 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
     async def start_handler(message: Message, state: FSMContext) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
-        await _reset_to_menu(state, message)
+        await _reset_to_menu(state, message, deps)
 
     @dispatcher.message(Command("help"))
     async def help_handler(message: Message, state: FSMContext) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
-        await _reset_to_menu(state, message, _help_text())
+        await _reset_to_menu(state, message, deps, _help_text())
 
     @dispatcher.message(Command("cancel"))
     async def cancel_handler(message: Message, state: FSMContext) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
-        await _reset_to_menu(state, message, "Текущий сценарий отменен.")
+        await _reset_to_menu(state, message, deps, "Текущий сценарий отменен.")
 
     @dispatcher.message(Command("delete_list"))
     async def delete_list_handler(message: Message, state: FSMContext) -> None:
@@ -560,53 +748,123 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             return
         await _start_delete_flow(message, state, deps)
 
-    @dispatcher.callback_query(F.data.startswith(f"{ACTION_ADD}:"))
-    async def menu_add_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    @dispatcher.callback_query(F.data.startswith(f"{ACTION_SELECT_MIKROTIK}:"))
+    async def select_mikrotik_handler(callback: CallbackQuery, state: FSMContext) -> None:
+        if not await _ensure_authorized(callback, deps.settings):
+            return
+        validated = await _validate_callback(
+            callback,
+            state,
+            expected_state=BotFlow.mikrotik_selection,
+            expected_actions={ACTION_SELECT_MIKROTIK},
+        )
+        if validated is None:
+            return
+        parsed, _ = validated
+        user = callback.from_user
+        if user is None or parsed.payload is None:
+            await callback.answer("Эта кнопка больше неактуальна. Откройте меню заново.", show_alert=True)
+            return
+        if not deps.user_access_resolver.can_access(user.id, parsed.payload):
+            await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
+            await callback.answer()
+            return
+        mikrotik = deps.settings.mikrotiks_by_id.get(parsed.payload)
+        if mikrotik is None:
+            await _reset_to_menu(state, callback, deps, "Выбранный MikroTik больше недоступен.")
+            await callback.answer()
+            return
+        await _show_mikrotik_actions_menu(
+            callback,
+            state,
+            mikrotik_id=mikrotik.id,
+            mikrotik_name=mikrotik.name,
+        )
+        await callback.answer()
+
+    @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_ADD}:"))
+    async def router_add_handler(callback: CallbackQuery, state: FSMContext) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
         if await _validate_callback(
             callback,
             state,
-            expected_state=BotFlow.menu,
-            expected_actions={ACTION_ADD},
+            expected_state=BotFlow.mikrotik_actions,
+            expected_actions={ACTION_ROUTER_ADD},
         ) is None:
             return
         await _start_add_flow(callback, state, deps)
         await callback.answer()
 
-    @dispatcher.callback_query(F.data.startswith(f"{ACTION_DELETE}:"))
-    async def menu_delete_handler(callback: CallbackQuery, state: FSMContext) -> None:
+    @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_DELETE}:"))
+    async def router_delete_handler(callback: CallbackQuery, state: FSMContext) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
         if await _validate_callback(
             callback,
             state,
-            expected_state=BotFlow.menu,
-            expected_actions={ACTION_DELETE},
+            expected_state=BotFlow.mikrotik_actions,
+            expected_actions={ACTION_ROUTER_DELETE},
         ) is None:
             return
         await _start_delete_flow(callback, state, deps)
+        await callback.answer()
+
+    @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_BACK}:"))
+    async def router_back_handler(callback: CallbackQuery, state: FSMContext) -> None:
+        if not await _ensure_authorized(callback, deps.settings):
+            return
+        if await _validate_callback(
+            callback,
+            state,
+            expected_state=BotFlow.mikrotik_actions,
+            expected_actions={ACTION_ROUTER_BACK},
+        ) is None:
+            return
+        await _reset_to_menu(state, callback, deps)
         await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_HELP}:"))
     async def menu_help_handler(callback: CallbackQuery, state: FSMContext) -> None:
         if not await _ensure_authorized(callback, deps.settings):
             return
-        if await _validate_callback(
-            callback,
-            state,
-            expected_state=BotFlow.menu,
-            expected_actions={ACTION_HELP},
-        ) is None:
+        parsed = _parse_callback_data(callback.data)
+        current_state = await state.get_state()
+        data = await state.get_data()
+        if parsed is None or parsed.action != ACTION_HELP:
+            await callback.answer("Эта кнопка не поддерживается.", show_alert=True)
             return
-        await _reset_to_menu(state, callback, _help_text())
-        await callback.answer()
+        if data.get(DATA_FLOW_SESSION_ID) != parsed.session_id:
+            await callback.answer("Это меню уже неактуально. Откройте его заново.", show_alert=True)
+            return
+        if current_state == BotFlow.mikrotik_selection.state:
+            await _show_mikrotik_selection_menu(callback, state, deps, notice=_help_text())
+            await callback.answer()
+            return
+        if current_state == BotFlow.mikrotik_actions.state:
+            selected = _selected_mikrotik_from_data(data)
+            if selected is None:
+                await _reset_to_menu(state, callback, deps, _help_text())
+            else:
+                await _show_mikrotik_actions_menu(
+                    callback,
+                    state,
+                    mikrotik_id=selected[0],
+                    mikrotik_name=selected[1],
+                    notice=_help_text(),
+                )
+            await callback.answer()
+            return
+        await callback.answer(_message_for_wrong_callback(current_state), show_alert=True)
 
     @dispatcher.message(BotFlow.add_waiting_ip_input)
     async def add_ip_input_handler(message: Message, state: FSMContext) -> None:
         if not await _ensure_authorized(message, deps.settings):
             return
-        await _handle_add_ip_input(message, state, deps)
+        try:
+            await _handle_add_ip_input(message, state)
+        except RuntimeError:
+            await _reset_to_menu(state, message, deps, "Сценарий добавления потерян. Начните заново.")
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_ADD_EXISTING}:"))
     async def add_existing_list_handler(callback: CallbackQuery, state: FSMContext) -> None:
@@ -687,24 +945,38 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if validated is None:
             return
         _, data = validated
+        selected = _selected_mikrotik_from_data(data)
         list_name = data.get(DATA_SELECTED_LIST)
         valid_ips = data.get(DATA_VALID_IPS, [])
         invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
-        if not isinstance(list_name, str) or not isinstance(valid_ips, list) or not isinstance(invalid_tokens, list):
+        if (
+            selected is None
+            or not isinstance(list_name, str)
+            or not isinstance(valid_ips, list)
+            or not isinstance(invalid_tokens, list)
+        ):
             await callback.answer("Сценарий добавления потерян. Начните заново.", show_alert=True)
             return
+        mikrotik_id, mikrotik_name = selected
         try:
-            result = await deps.address_list_manager.add_ips(
+            result = await deps.address_list_service.add_ips(
+                mikrotik_id=mikrotik_id,
                 list_name=list_name,
                 valid_ips=valid_ips,
                 invalid_tokens=invalid_tokens,
             )
         except (ConnectionError, OSError, TimeoutError, RuntimeError):
-            logger.exception("Failed to add IPs to MikroTik list %s", list_name)
-            await _reply_mikrotik_error(callback, state)
+            logger.exception("Failed to add IPs to MikroTik %s list %s", mikrotik_id, list_name)
+            await _reply_mikrotik_error(callback, state, deps)
             await callback.answer()
             return
-        await _reset_to_menu(state, callback, _format_add_result(result))
+        await _show_mikrotik_actions_menu(
+            callback,
+            state,
+            mikrotik_id=mikrotik_id,
+            mikrotik_name=mikrotik_name,
+            notice=_format_add_result(result, mikrotik_name),
+        )
         await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_DELETE_PICK}:"))
@@ -745,18 +1017,26 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if validated is None:
             return
         _, data = validated
+        selected = _selected_mikrotik_from_data(data)
         list_name = data.get(DATA_SELECTED_LIST)
-        if not isinstance(list_name, str) or not list_name:
+        if selected is None or not isinstance(list_name, str) or not list_name:
             await callback.answer("Сценарий удаления потерян. Начните заново.", show_alert=True)
             return
+        mikrotik_id, mikrotik_name = selected
         try:
-            result = await deps.address_list_manager.delete_list(list_name)
+            result = await deps.address_list_service.delete_list(mikrotik_id, list_name)
         except (ConnectionError, OSError, TimeoutError, RuntimeError):
-            logger.exception("Failed to delete MikroTik list %s", list_name)
-            await _reply_mikrotik_error(callback, state)
+            logger.exception("Failed to delete MikroTik %s list %s", mikrotik_id, list_name)
+            await _reply_mikrotik_error(callback, state, deps)
             await callback.answer()
             return
-        await _reset_to_menu(state, callback, _format_delete_result(result))
+        await _show_mikrotik_actions_menu(
+            callback,
+            state,
+            mikrotik_id=mikrotik_id,
+            mikrotik_name=mikrotik_name,
+            notice=_format_delete_result(result, mikrotik_name),
+        )
         await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_BACK}:"))
@@ -773,15 +1053,30 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await callback.answer("Это меню уже неактуально. Откройте его заново.", show_alert=True)
             return
 
+        selected = _selected_mikrotik_from_data(data)
+        if selected is None:
+            await _reset_to_menu(state, callback, deps, "Сценарий потерян. Начните заново.")
+            await callback.answer()
+            return
+        mikrotik_id, mikrotik_name = selected
+
         if current_state == BotFlow.add_waiting_new_list_name.state:
             address_lists = data.get(DATA_ADDRESS_LISTS, [])
             if not isinstance(address_lists, list):
-                await _reset_to_menu(state, callback, "Сценарий добавления потерян. Начните заново.")
+                await _show_mikrotik_actions_menu(
+                    callback,
+                    state,
+                    mikrotik_id=mikrotik_id,
+                    mikrotik_name=mikrotik_name,
+                    notice="Сценарий добавления потерян. Начните заново.",
+                )
                 await callback.answer()
                 return
             await _show_add_list_choice(
                 callback,
                 state,
+                mikrotik_id=mikrotik_id,
+                mikrotik_name=mikrotik_name,
                 address_lists=address_lists,
             )
             await callback.answer()
@@ -790,8 +1085,14 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if current_state == BotFlow.add_waiting_confirmation.state:
             list_name = data.get(DATA_SELECTED_LIST)
             selected_source = data.get(DATA_SELECTED_SOURCE)
-            if not isinstance(list_name, str) or not list_name or not isinstance(selected_source, str):
-                await _reset_to_menu(state, callback, "Сценарий добавления потерян. Начните заново.")
+            if not isinstance(list_name, str) or not isinstance(selected_source, str):
+                await _show_mikrotik_actions_menu(
+                    callback,
+                    state,
+                    mikrotik_id=mikrotik_id,
+                    mikrotik_name=mikrotik_name,
+                    notice="Сценарий добавления потерян. Начните заново.",
+                )
                 await callback.answer()
                 return
             await _show_add_ip_prompt(
@@ -806,7 +1107,13 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if current_state == BotFlow.delete_waiting_confirmation.state:
             address_lists = data.get(DATA_ADDRESS_LISTS, [])
             if not isinstance(address_lists, list) or not address_lists:
-                await _reset_to_menu(state, callback, "Сценарий удаления потерян. Начните заново.")
+                await _show_mikrotik_actions_menu(
+                    callback,
+                    state,
+                    mikrotik_id=mikrotik_id,
+                    mikrotik_name=mikrotik_name,
+                    notice="Сценарий удаления потерян. Начните заново.",
+                )
                 await callback.answer()
                 return
             session_id = _new_session_id()
@@ -821,7 +1128,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _render_screen(
                 state,
                 callback,
-                "Выберите address-list для полного удаления.",
+                f"MikroTik: {mikrotik_name}\nВыберите address-list для полного удаления.",
                 _build_delete_list_keyboard(address_lists, session_id),
             )
             await callback.answer()
@@ -841,11 +1148,22 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         if data.get(DATA_FLOW_SESSION_ID) != parsed.session_id:
             await callback.answer("Это меню уже неактуально. Откройте его заново.", show_alert=True)
             return
-        await _reset_to_menu(state, callback, "Текущий сценарий отменен.")
+        selected = _selected_mikrotik_from_data(data)
+        if selected is None:
+            await _reset_to_menu(state, callback, deps, "Текущий сценарий отменен.")
+        else:
+            await _show_mikrotik_actions_menu(
+                callback,
+                state,
+                mikrotik_id=selected[0],
+                mikrotik_name=selected[1],
+                notice="Текущий сценарий отменен.",
+            )
         await callback.answer()
 
     @dispatcher.message(
-        BotFlow.menu,
+        BotFlow.mikrotik_selection,
+        BotFlow.mikrotik_actions,
         BotFlow.add_waiting_list_choice,
         BotFlow.add_waiting_confirmation,
         BotFlow.delete_waiting_list_choice,

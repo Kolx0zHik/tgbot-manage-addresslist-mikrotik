@@ -10,6 +10,8 @@ from tgbot_manage_addresslist.telegram_bot import (
     BotFlow,
     DATA_INVALID_TOKENS,
     DATA_SELECTED_LIST,
+    DATA_SELECTED_MIKROTIK_ID,
+    DATA_SELECTED_MIKROTIK_NAME,
     DATA_SELECTED_SOURCE,
     DATA_VALID_IPS,
     _contains_cyrillic,
@@ -27,6 +29,12 @@ async def test_show_add_confirmation_persists_ips_in_state(monkeypatch: pytest.M
         return None
 
     monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
+    await state.update_data(
+        **{
+            DATA_SELECTED_MIKROTIK_ID: "mt1",
+            DATA_SELECTED_MIKROTIK_NAME: "Office",
+        }
+    )
 
     await _show_add_confirmation(
         object(),
@@ -53,6 +61,12 @@ async def test_show_add_ip_prompt_resets_pending_ips(monkeypatch: pytest.MonkeyP
         return None
 
     monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
+    await state.update_data(
+        **{
+            DATA_SELECTED_MIKROTIK_ID: "mt1",
+            DATA_SELECTED_MIKROTIK_NAME: "Office",
+        }
+    )
 
     await _show_add_ip_prompt(
         object(),
