@@ -17,9 +17,11 @@ This repository hosts a Telegram bot that manages MikroTik firewall address list
 - `src/tgbot_manage_addresslist/logic.py` contains IP parsing and address-list business logic.
 - `src/tgbot_manage_addresslist/mikrotik.py` contains SSH command execution and RouterOS output parsing.
 - `src/tgbot_manage_addresslist/telegram_bot.py` contains Telegram handlers and FSM states.
+- The bot UX is button-first: inline keyboards drive the main flows, and Telegram command menu should expose only `/start` as the safe way back to the main menu.
 
 ## Agent Expectations
 
 - Verify behavior with a real bot run or another direct manual check before claiming the task is complete.
 - If a command can delete MikroTik data, require an explicit confirmation step in the bot flow.
 - Keep user-facing messages short and explicit, especially for partial-success reports.
+- Treat `/start` as an unconditional reset to the main menu, and prefer removing stale inline keyboards rather than leaving old active buttons in chat history.
