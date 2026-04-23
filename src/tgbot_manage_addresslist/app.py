@@ -7,9 +7,9 @@ from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import BotCommand
 
-from tgbot_manage_addresslist.logic import AddressListManager
+from tgbot_manage_addresslist.logic import AddressListManager, AddressListService
 from tgbot_manage_addresslist.mikrotik import MikroTikSSHClient
-from tgbot_manage_addresslist.settings import Settings
+from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 from tgbot_manage_addresslist.telegram_bot import BotDependencies, register_handlers
 
 
@@ -32,23 +32,45 @@ async def setup_bot_commands(bot: Bot) -> None:
     )
 
 
+async def log_startup_health_checks(
+    service: AddressListService,
+    mikrotiks: tuple[MikroTikSettings, ...],
+) -> None:
+    for mikrotik in mikrotiks:
+        try:
+            address_lists = await service.fetch_address_lists(mikrotik.id)
+        except Exception:
+            logger.exception(
+                "Initial MikroTik SSH check failed for id=%s name=%s",
+                mikrotik.id,
+                mikrotik.name,
+            )
+        else:
+            logger.info(
+                "Initial MikroTik SSH check succeeded for id=%s name=%s found=%s",
+                mikrotik.id,
+                mikrotik.name,
+                len(address_lists),
+            )
+
+
 async def run() -> None:
     settings = Settings.from_env()
     configure_logging(settings.log_level)
     bot = Bot(token=settings.telegram_bot_token)
     dispatcher = Dispatcher(storage=MemoryStorage())
-    manager = AddressListManager(MikroTikSSHClient(settings))
+    managers_by_id = {
+        mikrotik.id: AddressListManager(MikroTikSSHClient(mikrotik))
+        for mikrotik in settings.mikrotiks
+    }
+    service = AddressListService(managers_by_id)
+    manager = managers_by_id[settings.mikrotiks[0].id]
     deps = BotDependencies(settings=settings, address_list_manager=manager)
     register_handlers(dispatcher, deps)
     await setup_bot_commands(bot)
 
     logger.info("Starting Telegram bot polling")
-    try:
-        address_lists = await manager.fetch_address_lists()
-    except Exception:
-        logger.exception("Initial MikroTik SSH check failed")
-    else:
-        logger.info("Initial MikroTik SSH check succeeded, found %s address-lists", len(address_lists))
+    await log_startup_health_checks(service, settings.mikrotiks)
 
     try:
         await dispatcher.start_polling(bot)
