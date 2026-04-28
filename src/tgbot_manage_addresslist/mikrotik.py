@@ -131,7 +131,7 @@ class MikroTikSSHClient:
 
     async def ensure_mangle_rule(self, list_name: str) -> None:
         command = (
-            f"/ip firewall mangle add chain=prerouting src-address-list={routeros_quote(list_name)} "
+            f"/ip firewall mangle add chain=prerouting dst-address-list={routeros_quote(list_name)} "
             f"action=mark-routing new-routing-mark={routeros_quote('VPN_Table')} passthrough=yes "
             f"comment={routeros_quote(mangle_rule_comment(list_name))}"
         )
