@@ -14,6 +14,7 @@ RU:
 - Для нового `address-list` бот автоматически создает `mangle`-правило, отправляющее трафик через `VPN_Table`.
 - Бот отдельно показывает добавленные адреса, дубликаты, невалидные значения и ошибки MikroTik.
 - Полное удаление `address-list` выполняется только после явного подтверждения и удаляет связанное `mangle`-правило.
+- Список существующих `address-list` доступен отдельной кнопкой, оттуда можно выбрать список для удаления.
 
 EN:
 - The bot uses a button-first UX: main flows are driven by inline keyboards.
@@ -24,6 +25,7 @@ EN:
 - For a new `address-list`, the bot automatically creates a `mangle` rule that routes traffic through `VPN_Table`.
 - The bot reports added entries, duplicates, invalid values, and MikroTik-side errors separately.
 - Full `address-list` deletion requires explicit confirmation and removes the matching `mangle` rule.
+- Existing `address-list` names are shown from a dedicated button, with delete actions available from that menu.
 
 ## Features / Возможности
 
@@ -41,6 +43,8 @@ EN:
   EN: reject Cyrillic characters in new `address-list` names
 - RU: защита от устаревших кнопок и неверных шагов сценария  
   EN: reject stale buttons and wrong-step actions
+- RU: просмотр существующих `address-list` перед удалением
+  EN: review existing `address-list` names before deletion
 - RU: allowlist по Telegram user ID  
   EN: allowlist by Telegram user ID
 - RU: админы управляют всеми MikroTik, обычные пользователи только своими  
@@ -142,19 +146,21 @@ EN:
 6. The bot will show a confirmation step.
 7. After confirmation, the bot will add the entries and show the result.
 
-### Delete Flow / Удаление списка
+### List And Delete Flow / Просмотр и удаление списка
 
 RU:
 1. Выберите MikroTik.
-2. Нажмите `Удалить address-list`.
-3. Выберите список.
-4. Подтвердите удаление.
+2. Нажмите `Список address-list`.
+3. Проверьте список существующих `address-list`.
+4. Нажмите `Удалить <имя списка>`.
+5. Подтвердите удаление.
 
 EN:
 1. Choose a MikroTik router.
-2. Press `Удалить address-list`.
-3. Choose a list.
-4. Confirm the deletion.
+2. Press `Список address-list`.
+3. Review the existing `address-list` names.
+4. Press `Удалить <list name>`.
+5. Confirm the deletion.
 
 ## Validation Rules / Правила валидации
 
@@ -194,6 +200,8 @@ EN:
   EN: verify that a new list name containing Cyrillic is rejected
 - RU: нажать старую кнопку выбора MikroTik или старую action-кнопку и убедиться, что бот сообщает о неактуальном меню  
   EN: press an old MikroTik-selection or old action button and confirm the bot reports that the menu is stale
+- RU: нажать `Список address-list` и убедиться, что бот показывает существующие списки с кнопками удаления
+  EN: press `Список address-list` and confirm the bot shows existing lists with delete buttons
 - RU: убедиться, что удаление `address-list` требует явного подтверждения и удаляет список только на выбранном MikroTik  
   EN: confirm that deleting an `address-list` requires explicit confirmation and only affects the selected MikroTik
 
