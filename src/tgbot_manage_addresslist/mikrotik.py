@@ -133,6 +133,7 @@ class MikroTikSSHClient:
         command = (
             f"/ip firewall mangle add chain=prerouting dst-address-list={routeros_quote(list_name)} "
             f"action=mark-routing new-routing-mark={routeros_quote('VPN_Table')} passthrough=yes "
+            "place-before=0 "
             f"comment={routeros_quote(mangle_rule_comment(list_name))}"
         )
         result = await self._run(command)

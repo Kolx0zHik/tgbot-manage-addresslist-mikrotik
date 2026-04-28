@@ -209,7 +209,7 @@ EN:
 - list address-lists: `/ip firewall address-list print terse without-paging`
 - add entry: `/ip firewall address-list add list="NAME" address="IP"`
 - delete full list: `/ip firewall address-list remove [find list="NAME"]`
-- add VPN routing mangle rule for new list: `/ip firewall mangle add chain=prerouting dst-address-list="NAME" action=mark-routing new-routing-mark="VPN_Table" passthrough=yes comment="tgbot_manage_addresslist: route NAME via VPN_Table"`
+- add VPN routing mangle rule for new list at the top of mangle rules: `/ip firewall mangle add chain=prerouting dst-address-list="NAME" action=mark-routing new-routing-mark="VPN_Table" passthrough=yes place-before=0 comment="tgbot_manage_addresslist: route NAME via VPN_Table"`
 - delete VPN routing mangle rule: `/ip firewall mangle remove [find comment="tgbot_manage_addresslist: route NAME via VPN_Table"]`
 
 ## Security Notes / Замечания по безопасности

@@ -64,7 +64,7 @@ async def test_ensure_mangle_rule_adds_vpn_table_rule_with_comment() -> None:
     assert client.commands == [
         (
             '/ip firewall mangle add chain=prerouting dst-address-list="to-VPN" '
-            'action=mark-routing new-routing-mark="VPN_Table" passthrough=yes '
+            'action=mark-routing new-routing-mark="VPN_Table" passthrough=yes place-before=0 '
             'comment="tgbot_manage_addresslist: route to-VPN via VPN_Table"'
         )
     ]
