@@ -13,15 +13,24 @@ from tgbot_manage_addresslist.settings import MikroTikSettings, Settings
 class StubClient:
     def __init__(self, *, address_lists: list[str] | None = None) -> None:
         self.address_lists = address_lists or []
+        self.calls: list[tuple[str, str] | tuple[str, str, str]] = []
 
     async def fetch_address_lists(self) -> list[str]:
         return self.address_lists
 
     async def add_address(self, list_name: str, ip_address: str) -> str | None:
+        self.calls.append(("add_address", list_name, ip_address))
         return None
 
     async def delete_address_list(self, list_name: str) -> int:
+        self.calls.append(("delete_address_list", list_name))
         return 1
+
+    async def ensure_mangle_rule(self, list_name: str) -> None:
+        self.calls.append(("ensure_mangle_rule", list_name))
+
+    async def delete_mangle_rule(self, list_name: str) -> None:
+        self.calls.append(("delete_mangle_rule", list_name))
 
 
 def make_settings() -> Settings:
@@ -84,3 +93,34 @@ async def test_address_list_service_routes_calls_by_mikrotik_id() -> None:
 
     assert office_lists == ["office-list"]
     assert warehouse_lists == ["warehouse-list"]
+
+
+@pytest.mark.asyncio
+async def test_address_list_manager_creates_mangle_rule_before_adding_ips_for_new_list() -> None:
+    client = StubClient()
+    manager = AddressListManager(client)
+
+    await manager.add_ips(
+        "to-VPN",
+        ["192.0.2.10"],
+        [],
+        create_mangle_rule=True,
+    )
+
+    assert client.calls == [
+        ("ensure_mangle_rule", "to-VPN"),
+        ("add_address", "to-VPN", "192.0.2.10"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_address_list_manager_deletes_mangle_rule_when_deleting_list() -> None:
+    client = StubClient()
+    manager = AddressListManager(client)
+
+    await manager.delete_list("to-VPN")
+
+    assert client.calls == [
+        ("delete_address_list", "to-VPN"),
+        ("delete_mangle_rule", "to-VPN"),
+    ]

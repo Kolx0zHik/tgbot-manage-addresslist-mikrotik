@@ -947,11 +947,13 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         _, data = validated
         selected = _selected_mikrotik_from_data(data)
         list_name = data.get(DATA_SELECTED_LIST)
+        selected_source = data.get(DATA_SELECTED_SOURCE)
         valid_ips = data.get(DATA_VALID_IPS, [])
         invalid_tokens = data.get(DATA_INVALID_TOKENS, [])
         if (
             selected is None
             or not isinstance(list_name, str)
+            or not isinstance(selected_source, str)
             or not isinstance(valid_ips, list)
             or not isinstance(invalid_tokens, list)
         ):
@@ -964,6 +966,7 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
                 list_name=list_name,
                 valid_ips=valid_ips,
                 invalid_tokens=invalid_tokens,
+                create_mangle_rule=selected_source == "new",
             )
         except (ConnectionError, OSError, TimeoutError, RuntimeError):
             logger.exception("Failed to add IPs to MikroTik %s list %s", mikrotik_id, list_name)

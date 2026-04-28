@@ -7,7 +7,7 @@ from tgbot_manage_addresslist.settings import MikroTikSettings
 
 
 class StubMikroTikSSHClient(MikroTikSSHClient):
-    def __init__(self, result: CommandResult) -> None:
+    def __init__(self, result: CommandResult | list[CommandResult]) -> None:
         settings = MikroTikSettings(
             id="mt1",
             name="Office",
@@ -17,10 +17,12 @@ class StubMikroTikSSHClient(MikroTikSSHClient):
             password="pass",
         )
         super().__init__(settings)
-        self._result = result
+        self._results = result if isinstance(result, list) else [result]
+        self.commands: list[str] = []
 
     async def _run(self, command: str) -> CommandResult:
-        return self._result
+        self.commands.append(command)
+        return self._results.pop(0)
 
 
 @pytest.mark.asyncio
@@ -51,3 +53,32 @@ async def test_fetch_address_lists_uses_router_specific_settings() -> None:
     result = await client.fetch_address_lists()
 
     assert result == ["office-list"]
+
+
+@pytest.mark.asyncio
+async def test_ensure_mangle_rule_adds_vpn_table_rule_with_comment() -> None:
+    client = StubMikroTikSSHClient(CommandResult(stdout="", stderr="", exit_status=0))
+
+    await client.ensure_mangle_rule("to-VPN")
+
+    assert client.commands == [
+        (
+            '/ip firewall mangle add chain=prerouting src-address-list="to-VPN" '
+            'action=mark-routing new-routing-mark="VPN_Table" passthrough=yes '
+            'comment="tgbot_manage_addresslist: route to-VPN via VPN_Table"'
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_delete_mangle_rule_removes_rule_by_comment() -> None:
+    client = StubMikroTikSSHClient(CommandResult(stdout="", stderr="", exit_status=0))
+
+    await client.delete_mangle_rule("to-VPN")
+
+    assert client.commands == [
+        (
+            '/ip firewall mangle remove [find comment='
+            '"tgbot_manage_addresslist: route to-VPN via VPN_Table"]'
+        )
+    ]

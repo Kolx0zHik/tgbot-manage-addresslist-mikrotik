@@ -11,8 +11,9 @@ RU:
 - Бот сначала предлагает выбрать MikroTik, а затем действия для выбранного роутера.
 - Админы видят все MikroTik, обычные пользователи видят только назначенные им.
 - Бот умеет добавлять IP-адреса и CIDR-подсети в существующий или новый `address-list`.
+- Для нового `address-list` бот автоматически создает `mangle`-правило, отправляющее трафик через `VPN_Table`.
 - Бот отдельно показывает добавленные адреса, дубликаты, невалидные значения и ошибки MikroTik.
-- Полное удаление `address-list` выполняется только после явного подтверждения.
+- Полное удаление `address-list` выполняется только после явного подтверждения и удаляет связанное `mangle`-правило.
 
 EN:
 - The bot uses a button-first UX: main flows are driven by inline keyboards.
@@ -20,8 +21,9 @@ EN:
 - The bot asks the user to choose a MikroTik router first and only then shows router-specific actions.
 - Admins can see all MikroTik routers, while regular users can only see routers assigned to them.
 - The bot can add IP addresses and CIDR subnets to an existing or new `address-list`.
+- For a new `address-list`, the bot automatically creates a `mangle` rule that routes traffic through `VPN_Table`.
 - The bot reports added entries, duplicates, invalid values, and MikroTik-side errors separately.
-- Full `address-list` deletion requires explicit confirmation.
+- Full `address-list` deletion requires explicit confirmation and removes the matching `mangle` rule.
 
 ## Features / Возможности
 
@@ -207,6 +209,8 @@ EN:
 - list address-lists: `/ip firewall address-list print terse without-paging`
 - add entry: `/ip firewall address-list add list="NAME" address="IP"`
 - delete full list: `/ip firewall address-list remove [find list="NAME"]`
+- add VPN routing mangle rule for new list: `/ip firewall mangle add chain=prerouting src-address-list="NAME" action=mark-routing new-routing-mark="VPN_Table" passthrough=yes comment="tgbot_manage_addresslist: route NAME via VPN_Table"`
+- delete VPN routing mangle rule: `/ip firewall mangle remove [find comment="tgbot_manage_addresslist: route NAME via VPN_Table"]`
 
 ## Security Notes / Замечания по безопасности
 
@@ -214,5 +218,5 @@ EN:
   EN: do not commit `.env` or real secrets
 - RU: используйте отдельного пользователя MikroTik для бота  
   EN: use a dedicated MikroTik user for the bot
-- RU: выдавайте этому пользователю только нужные права на `address-list`  
-  EN: grant that user only the permissions required for `address-list`
+- RU: выдавайте этому пользователю только нужные права на `address-list` и `mangle`
+  EN: grant that user only the permissions required for `address-list` and `mangle`

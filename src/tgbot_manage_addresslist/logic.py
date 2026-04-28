@@ -74,10 +74,15 @@ class AddressListManager:
         list_name: str,
         valid_ips: list[str],
         invalid_tokens: list[str],
+        *,
+        create_mangle_rule: bool = False,
     ) -> AddOperationResult:
         added: list[str] = []
         duplicates: list[str] = []
         errors: list[AddOperationError] = []
+
+        if create_mangle_rule:
+            await self._mikrotik_client.ensure_mangle_rule(list_name)
 
         for current_ip in valid_ips:
             error = await self._mikrotik_client.add_address(list_name, current_ip)
@@ -100,6 +105,7 @@ class AddressListManager:
 
     async def delete_list(self, list_name: str) -> DeleteOperationResult:
         removed_count = await self._mikrotik_client.delete_address_list(list_name)
+        await self._mikrotik_client.delete_mangle_rule(list_name)
         return DeleteOperationResult(list_name=list_name, removed_count=removed_count)
 
 
@@ -122,8 +128,15 @@ class AddressListService:
         list_name: str,
         valid_ips: list[str],
         invalid_tokens: list[str],
+        *,
+        create_mangle_rule: bool = False,
     ) -> AddOperationResult:
-        return await self._manager_for(mikrotik_id).add_ips(list_name, valid_ips, invalid_tokens)
+        return await self._manager_for(mikrotik_id).add_ips(
+            list_name,
+            valid_ips,
+            invalid_tokens,
+            create_mangle_rule=create_mangle_rule,
+        )
 
     async def delete_list(self, mikrotik_id: str, list_name: str) -> DeleteOperationResult:
         return await self._manager_for(mikrotik_id).delete_list(list_name)

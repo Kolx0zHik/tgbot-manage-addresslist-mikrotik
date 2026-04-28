@@ -22,7 +22,13 @@ class MikroTikClientProtocol(Protocol):
     async def add_address(self, list_name: str, ip_address: str) -> str | None:
         ...
 
+    async def ensure_mangle_rule(self, list_name: str) -> None:
+        ...
+
     async def delete_address_list(self, list_name: str) -> int:
+        ...
+
+    async def delete_mangle_rule(self, list_name: str) -> None:
         ...
 
 
@@ -40,6 +46,10 @@ def _unescape_routeros_value(value: str) -> str:
 def routeros_quote(value: str) -> str:
     escaped = value.replace("\\", "\\\\").replace('"', '\\"')
     return f'"{escaped}"'
+
+
+def mangle_rule_comment(list_name: str) -> str:
+    return f"tgbot_manage_addresslist: route {list_name} via VPN_Table"
 
 
 def parse_address_list_names(output: str) -> list[str]:
@@ -119,6 +129,17 @@ class MikroTikSSHClient:
             return None
         return result.stderr or result.stdout or "Unknown MikroTik error"
 
+    async def ensure_mangle_rule(self, list_name: str) -> None:
+        command = (
+            f"/ip firewall mangle add chain=prerouting src-address-list={routeros_quote(list_name)} "
+            f"action=mark-routing new-routing-mark={routeros_quote('VPN_Table')} passthrough=yes "
+            f"comment={routeros_quote(mangle_rule_comment(list_name))}"
+        )
+        result = await self._run(command)
+        stdout_lowered = result.stdout.lower()
+        if result.exit_status != 0 or stdout_lowered.startswith("failure:"):
+            raise RuntimeError(result.stderr or result.stdout or "Failed to add MikroTik mangle rule")
+
     async def delete_address_list(self, list_name: str) -> int:
         inspect_command = (
             f"/ip firewall address-list print terse without-paging where list={routeros_quote(list_name)}"
@@ -133,3 +154,13 @@ class MikroTikSSHClient:
             raise RuntimeError(delete_result.stderr or "Failed to delete MikroTik address-list")
 
         return len(parse_addresses(inspect_result.stdout))
+
+    async def delete_mangle_rule(self, list_name: str) -> None:
+        command = (
+            "/ip firewall mangle remove [find "
+            f"comment={routeros_quote(mangle_rule_comment(list_name))}]"
+        )
+        result = await self._run(command)
+        stdout_lowered = result.stdout.lower()
+        if result.exit_status != 0 or stdout_lowered.startswith("failure:"):
+            raise RuntimeError(result.stderr or result.stdout or "Failed to delete MikroTik mangle rule")
