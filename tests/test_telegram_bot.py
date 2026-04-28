@@ -10,11 +10,14 @@ from aiogram.fsm.storage.memory import MemoryStorage
 import tgbot_manage_addresslist.telegram_bot as telegram_bot
 from tgbot_manage_addresslist.telegram_bot import (
     BotFlow,
+    DATA_ADDRESS_LISTS,
     DATA_SELECTED_MIKROTIK_ID,
     DATA_SELECTED_MIKROTIK_NAME,
+    _build_address_list_overview_keyboard,
     _build_mikrotik_actions_keyboard,
     _build_mikrotik_selection_keyboard,
     _mikrotik_is_available,
+    _show_address_list_overview,
     _show_connecting_to_mikrotik,
     _show_mikrotik_actions_menu,
     _show_mikrotik_selection_menu,
@@ -45,7 +48,19 @@ def test_build_mikrotik_actions_keyboard_does_not_contain_help() -> None:
         for button in row
     ]
 
-    assert button_texts == ["Добавить IP", "Удалить address-list", "Назад"]
+    assert button_texts == ["Добавить IP", "Список address-list", "Назад"]
+
+
+def test_build_address_list_overview_keyboard_allows_delete_from_list_menu() -> None:
+    keyboard = _build_address_list_overview_keyboard(["office", "vpn"], "deadbeef")
+
+    button_texts = [
+        button.text
+        for row in keyboard.inline_keyboard
+        for button in row
+    ]
+
+    assert button_texts == ["Удалить office", "Удалить vpn", "Назад"]
 
 
 @pytest.mark.asyncio
@@ -111,6 +126,43 @@ async def test_show_mikrotik_actions_menu_persists_selected_router(
     assert data[DATA_SELECTED_MIKROTIK_ID] == "mt1"
     assert data[DATA_SELECTED_MIKROTIK_NAME] == "Office"
     assert rendered["text"] == "📍 MikroTik: Office\nЧто хотите сделать?"
+
+
+@pytest.mark.asyncio
+async def test_show_address_list_overview_displays_lists_and_delete_buttons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    storage = MemoryStorage()
+    state = FSMContext(storage=storage, key=StorageKey(bot_id=1, chat_id=1, user_id=1))
+    rendered: dict[str, object] = {}
+
+    async def fake_render_screen(state, event, text, reply_markup=None) -> None:
+        rendered["text"] = text
+        rendered["reply_markup"] = reply_markup
+
+    monkeypatch.setattr(telegram_bot, "_render_screen", fake_render_screen)
+
+    await _show_address_list_overview(
+        object(),
+        state,
+        mikrotik_id="mt1",
+        mikrotik_name="Office",
+        address_lists=["office", "vpn"],
+    )
+
+    data = await state.get_data()
+    button_texts = [
+        button.text
+        for row in rendered["reply_markup"].inline_keyboard
+        for button in row
+    ]
+
+    assert await state.get_state() == BotFlow.delete_waiting_list_choice.state
+    assert data[DATA_SELECTED_MIKROTIK_ID] == "mt1"
+    assert data[DATA_SELECTED_MIKROTIK_NAME] == "Office"
+    assert data[DATA_ADDRESS_LISTS] == ["office", "vpn"]
+    assert rendered["text"] == "📋 MikroTik: Office\nAddress-list:\n1. office\n2. vpn"
+    assert button_texts == ["Удалить office", "Удалить vpn", "Назад"]
 
 
 @pytest.mark.asyncio

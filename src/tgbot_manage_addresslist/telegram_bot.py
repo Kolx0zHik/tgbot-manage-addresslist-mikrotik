@@ -33,6 +33,7 @@ FLOW_DELETE = "delete"
 
 ACTION_SELECT_MIKROTIK = "mselect"
 ACTION_ROUTER_ADD = "radd"
+ACTION_ROUTER_LIST = "rlist"
 ACTION_ROUTER_DELETE = "rdel"
 ACTION_ROUTER_BACK = "rback"
 ACTION_CANCEL = "cancel"
@@ -120,8 +121,8 @@ def _build_mikrotik_actions_keyboard(session_id: str) -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Добавить IP", callback_data=_encode_callback_data(ACTION_ROUTER_ADD, session_id))
     builder.button(
-        text="Удалить address-list",
-        callback_data=_encode_callback_data(ACTION_ROUTER_DELETE, session_id),
+        text="Список address-list",
+        callback_data=_encode_callback_data(ACTION_ROUTER_LIST, session_id),
     )
     builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_ROUTER_BACK, session_id))
     builder.adjust(1)
@@ -156,6 +157,18 @@ def _build_delete_list_keyboard(address_lists: list[str], session_id: str) -> In
             callback_data=_encode_callback_data(ACTION_DELETE_PICK, session_id, index),
         )
     builder.button(text="Отмена", callback_data=_encode_callback_data(ACTION_CANCEL, session_id))
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def _build_address_list_overview_keyboard(address_lists: list[str], session_id: str) -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    for index, list_name in enumerate(address_lists):
+        builder.button(
+            text=f"Удалить {list_name}",
+            callback_data=_encode_callback_data(ACTION_DELETE_PICK, session_id, index),
+        )
+    builder.button(text="Назад", callback_data=_encode_callback_data(ACTION_BACK, session_id))
     builder.adjust(1)
     return builder.as_markup()
 
@@ -620,6 +633,69 @@ async def _start_delete_flow(event: Message | CallbackQuery, state: FSMContext, 
     )
 
 
+async def _start_address_list_overview(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    deps: BotDependencies,
+) -> None:
+    data = await state.get_data()
+    selected = _selected_mikrotik_from_data(data)
+    if selected is None:
+        await _reset_to_menu(state, event, deps, "Сначала выберите MikroTik.")
+        return
+
+    mikrotik_id, mikrotik_name = selected
+    try:
+        address_lists = await deps.address_list_service.fetch_address_lists(mikrotik_id)
+    except (ConnectionError, OSError, TimeoutError, RuntimeError):
+        logger.exception("Failed to fetch address-lists for overview on MikroTik %s", mikrotik_id)
+        await _reply_mikrotik_error(event, state, deps)
+        return
+
+    await _show_address_list_overview(
+        event,
+        state,
+        mikrotik_id=mikrotik_id,
+        mikrotik_name=mikrotik_name,
+        address_lists=address_lists,
+    )
+
+
+async def _show_address_list_overview(
+    event: Message | CallbackQuery,
+    state: FSMContext,
+    *,
+    mikrotik_id: str,
+    mikrotik_name: str,
+    address_lists: list[str],
+    notice: str | None = None,
+) -> None:
+    session_id = _new_session_id()
+    await state.set_state(BotFlow.delete_waiting_list_choice)
+    await state.update_data(
+        **{
+            DATA_FLOW_TYPE: FLOW_DELETE,
+            DATA_FLOW_SESSION_ID: session_id,
+            DATA_SELECTED_MIKROTIK_ID: mikrotik_id,
+            DATA_SELECTED_MIKROTIK_NAME: mikrotik_name,
+            DATA_ADDRESS_LISTS: address_lists,
+        }
+    )
+    if address_lists:
+        list_lines = [f"{index}. {list_name}" for index, list_name in enumerate(address_lists, start=1)]
+        text = f"📋 MikroTik: {mikrotik_name}\nAddress-list:\n" + "\n".join(list_lines)
+    else:
+        text = f"📋 MikroTik: {mikrotik_name}\nAddress-list не найдены."
+    if notice:
+        text = f"{notice}\n\n{text}"
+    await _render_screen(
+        state,
+        event,
+        text,
+        _build_address_list_overview_keyboard(address_lists, session_id),
+    )
+
+
 async def _show_delete_confirmation(event: Message | CallbackQuery, state: FSMContext, *, list_name: str) -> None:
     session_id = _new_session_id()
     data = await state.get_data()
@@ -827,6 +903,20 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
         ) is None:
             return
         await _start_add_flow(callback, state, deps)
+        await callback.answer()
+
+    @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_LIST}:"))
+    async def router_list_handler(callback: CallbackQuery, state: FSMContext) -> None:
+        if not await _ensure_authorized(callback, deps.settings):
+            return
+        if await _validate_callback(
+            callback,
+            state,
+            expected_state=BotFlow.mikrotik_actions,
+            expected_actions={ACTION_ROUTER_LIST},
+        ) is None:
+            return
+        await _start_address_list_overview(callback, state, deps)
         await callback.answer()
 
     @dispatcher.callback_query(F.data.startswith(f"{ACTION_ROUTER_DELETE}:"))
@@ -1107,6 +1197,16 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await callback.answer()
             return
 
+        if current_state == BotFlow.delete_waiting_list_choice.state:
+            await _show_mikrotik_actions_menu(
+                callback,
+                state,
+                mikrotik_id=mikrotik_id,
+                mikrotik_name=mikrotik_name,
+            )
+            await callback.answer()
+            return
+
         if current_state == BotFlow.delete_waiting_confirmation.state:
             address_lists = data.get(DATA_ADDRESS_LISTS, [])
             if not isinstance(address_lists, list) or not address_lists:
@@ -1131,8 +1231,12 @@ def register_handlers(dispatcher: Dispatcher, deps: BotDependencies) -> None:
             await _render_screen(
                 state,
                 callback,
-                f"MikroTik: {mikrotik_name}\nВыберите address-list для полного удаления.",
-                _build_delete_list_keyboard(address_lists, session_id),
+                f"📋 MikroTik: {mikrotik_name}\nAddress-list:\n"
+                + "\n".join(
+                    f"{index}. {list_name}"
+                    for index, list_name in enumerate(address_lists, start=1)
+                ),
+                _build_address_list_overview_keyboard(address_lists, session_id),
             )
             await callback.answer()
             return
